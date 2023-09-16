@@ -14,6 +14,7 @@ class InfractionData:
         else:
             info_dict = dict()
 
+        self.entry_id = info_dict.get('entry_id', None)
         self.warned_user = info_dict.get('warned_user', None)
         self.warning_moderator = info_dict.get('warning_moderator', None)
         self.warning_time = info_dict.get('warning_time', None)
@@ -40,9 +41,9 @@ class InfractionData:
 
         :rtype: str
         """
-        return 'InfractionData: warned_user:{0.warned_user} warning_moderator:{0.warning_moderator} ' \
-               'warning_time:{0.warning_time} thread_id:{0.thread_id} ' \
-               'rule_broken:{0.rule_broken} warning_reason:{0.warning_reason}'.format(self)
+        return 'InfractionData: entry_id:{0.entry_id} warned_user:{0.warned_user} warning_moderator:{0.warning_moderator} ' \
+               'warning_time:{0.warning_time} rule_broken:{0.rule_broken} ' \
+               'warning_reason:{0.warning_reason} thread_id:{0.thread_id}'.format(self)
 
     def __bool__(self):
         """
