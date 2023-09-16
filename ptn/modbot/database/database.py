@@ -145,8 +145,8 @@ DATABASE EDIT FUNCTIONS
 
 - Search database by warned user ID: find_infraction
 - Search database by entry ID: find_infraction
-- Remove warning from database: delete_warning
-- Remove all warnings for a user from database
+- Remove warning from database: delete_single_warning
+- Remove all warnings for a user from database: delete_all_warnings_for_user
 """
 
 
@@ -172,7 +172,11 @@ async def find_infraction(searchterm, searchcolumn):
 
 
 # Remove warning from database
-async def delete_warning_by_entry_id(entry_id):
+async def delete_single_warning(entry_id):
+    """
+    Function to lookup a warning by its Primary Key and delete it.
+    """
+    print(f"Attempting to delete entry {entry_id}.")
     warning = find_infraction(entry_id, InfractionDbFields.entry_id.value)
     try:
         await infraction_db_lock.acquire()
@@ -186,6 +190,9 @@ async def delete_warning_by_entry_id(entry_id):
 
 # Remove all warnings for a user
 async def delete_all_warnings_for_user(warned_user):
+    """
+    Function to delete all entries matching a given warned user ID.
+    """
     print(f"Attempting to delete all entries for {warned_user}.")
     try:
         await infraction_db_lock.acquire()
