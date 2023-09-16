@@ -64,7 +64,7 @@ def build_database_on_startup():
 # defining infraction table for database creation
 infractions_table_create = '''
     CREATE TABLE infractions(
-        entry_id INTEGER NOT NULL PRIMARY KEY,
+        entry_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         warned_user INTEGER NOT NULL,
         warning_moderator INTEGER NOT NULL,
         warning_time INTEGER NOT NULL,
