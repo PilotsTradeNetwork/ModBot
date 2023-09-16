@@ -70,7 +70,7 @@ infractions_table_create = '''
         warning_time INTEGER NOT NULL,
         rule_broken INTEGER,
         warning_reason TEXT,
-        thread_id INTEGER,
+        thread_id INTEGER
     )
     '''
 
@@ -132,7 +132,7 @@ Database connection, cursor, and lock
 
 
 # connect to infraction database
-infraction_conn = sqlite3.connect(constants.infraction_DB_PATH)
+infraction_conn = sqlite3.connect(constants.INFRACTION_DB_PATH)
 infraction_conn.row_factory = sqlite3.Row
 infraction_db = infraction_conn.cursor()
 

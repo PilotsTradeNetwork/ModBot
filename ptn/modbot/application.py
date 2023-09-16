@@ -14,7 +14,7 @@ build_directory_tree_on_startup() # build directory structure
 
 # import bot Cogs
 from ptn.modbot.botcommands.ModCommands import ModCommands
-from ptn.modbot.botcommands.DatabaseInteraction import DatabaseInteraction
+# from ptn.modbot.botcommands.DatabaseInteraction import DatabaseInteraction
 
 # import bot object, token, production status
 from ptn.modbot.constants import bot, TOKEN, _production, DATA_DIR
@@ -32,7 +32,7 @@ async def modbot():
     async with bot:
         build_database_on_startup()
         await bot.add_cog(ModCommands(bot))
-        await bot.add_cog(DatabaseInteraction(bot))
+        # await bot.add_cog(DatabaseInteraction(bot))
         await bot.start(TOKEN)
 
 
