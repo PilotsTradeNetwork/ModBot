@@ -18,7 +18,8 @@ class InfractionData:
         self.warned_user = info_dict.get('warned_user', None)
         self.warning_moderator = info_dict.get('warning_moderator', None)
         self.warning_time = info_dict.get('warning_time', None)
-        self.rule_broken = info_dict.get('rule_broken', None)
+        self.rule_broken_no = info_dict.get('rule_broken_no', None)
+        self.rule_broken_text = info_dict.get('rule_broken_text', None)
         self.warning_reason = info_dict.get('warning_reason', None)
         self.thread_id = info_dict.get('thread_id', None)
 
@@ -42,7 +43,7 @@ class InfractionData:
         :rtype: str
         """
         return 'InfractionData: entry_id:{0.entry_id} warned_user:{0.warned_user} warning_moderator:{0.warning_moderator} ' \
-               'warning_time:{0.warning_time} rule_broken:{0.rule_broken} ' \
+               'warning_time:{0.warning_time} rule_broken_no:{0.rule_broken_no} rule_broken_text:{0.rule_broken_text} ' \
                'warning_reason:{0.warning_reason} thread_id:{0.thread_id}'.format(self)
 
     def __bool__(self):

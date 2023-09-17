@@ -7,10 +7,23 @@ The Python script that starts the bot.
 import asyncio
 import os
 
-# import build functions
-from ptn.modbot.database.database import build_database_on_startup, build_directory_tree_on_startup
+# import directory paths
+from ptn.modbot.constants import DB_PATH, SQL_PATH, BACKUP_DB_PATH
+
+# ensure all paths function for a clean install
+def build_directory_tree_on_startup():
+    print("Building directory tree...")
+    try:
+        os.makedirs(DB_PATH, exist_ok=True) # /database - the main database files
+        os.makedirs(SQL_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
+        os.makedirs(BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
+    except Exception as e:
+        print(f"Error building directory tree: {e}")
 
 build_directory_tree_on_startup() # build directory structure
+
+# import function to build database
+from ptn.modbot.database.database import build_database_on_startup
 
 # import bot Cogs
 from ptn.modbot.botcommands.ModCommands import ModCommands

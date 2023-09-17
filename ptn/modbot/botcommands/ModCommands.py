@@ -20,12 +20,13 @@ from ptn.modbot.classes.InfractionData import InfractionData
 # local constants
 from ptn.modbot._metadata import __version__
 import ptn.modbot.constants as constants
-from ptn.modbot.constants import bot, channel_botspam, channel_evidence, channel_botdev, role_council, role_mod, get_guild
+from ptn.modbot.constants import bot, channel_botspam, channel_evidence, channel_botdev, role_council, role_mod, get_guild, infraction_color_mapping
 
 # local modules
-from ptn.modbot.database.database import find_infraction, delete_single_warning, delete_all_warnings_for_user
+from ptn.modbot.database.database import find_infraction_by_user, find_infraction_by_dbid, delete_single_warning, delete_all_warnings_for_user
 # from ptn.modbot.modules.Embeds import None
-from ptn.modbot.modules.ErrorHandler import on_app_command_error
+from ptn.modbot.modules.ErrorHandler import on_app_command_error, GenericError, on_generic_error
+from ptn.modbot.modules.Helpers import check_roles
 
 
 
@@ -37,25 +38,69 @@ returns: error message to user and log
 
 @bot.listen()
 async def on_command_error(ctx, error):
-    gif = random.choice(constants.error_gifs)
+    print(error)
     if isinstance(error, commands.BadArgument):
-        await ctx.send(f'**Bad argument!** {error}')
-        print({error})
+        message=f'Bad argument: {error}'
+
     elif isinstance(error, commands.CommandNotFound):
-        await ctx.send("**Invalid command.**")
-        print({error})
+        message=f"Sorry, were you talking to me? I don't know that command."
+
     elif isinstance(error, commands.MissingRequiredArgument):
-        print({error})
-        await ctx.send("**Sorry, that didn't work**.\n• Check you've included all required arguments."
-                       "\n• If using quotation marks, check they're opened *and* closed, and are in the proper place.\n• Check quotation"
-                       " marks are of the same type, i.e. all straight or matching open/close smartquotes.")
+        message=f"Sorry, that didn't work.\n• Check you've included all required arguments." \
+                 "\n• If using quotation marks, check they're opened *and* closed, and are in the proper place.\n• Check quotation" \
+                 " marks are of the same type, i.e. all straight or matching open/close smartquotes."
+
     elif isinstance(error, commands.MissingPermissions):
-        print({error})
-        await ctx.send('**Sorry, you\'re missing the required permission for this command.**')
+        message='Sorry, you\'re missing the required permission for this command.'
+
+    elif isinstance(error, commands.MissingAnyRole):
+        message=f'You require one of the following roles to use this command:\n<@&{role_council()}> • <@&{role_mod()}>'
+
     else:
-        await ctx.send(gif)
-        print({error})
-        await ctx.send(f"Sorry, that didn't work: {error}")
+        message=f'Sorry, that didn\'t work: {error}'
+
+    embed = discord.Embed(description=f"❌ {message}", color=constants.EMBED_COLOUR_ERROR)
+    await ctx.send(embed=embed)
+
+
+"""
+CONTEXT COMMANDS
+Cannot be placed in a Cog
+Uses @bot.tree instead of @command.tree
+"""
+@bot.tree.context_menu(name="View Infractions")
+@check_roles(constants.any_elevated_role)
+async def context_view_infractions(interaction:  discord.Interaction, member: discord.Member):
+    print(f"context_view_infractions called by {interaction.user.display_name} for {member.display_name}")
+
+    try: # try/except block to catch and handle errors
+
+        infractions = await find_infraction_by_user(member.id) # query the infractions db for target user
+        if not infractions: # nothing found, return message
+            embed = discord.Embed(
+                description=f"✅ No infractions found for <@{member.id}>",
+                color=constants.EMBED_COLOUR_OK
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embeds = [] # create an empty list to hold our embeds
+            for index, infraction in enumerate(infractions, start=1):
+                color = infraction_color_mapping.get(index, discord.Color.red()) # colours to use for successive embeds
+
+                # create an embed with all the particulars
+                # we'll need to retrieve the title of the rule from the rules db
+                # or we could store the title along with the rule number
+                # or we could pickle the entire rule object into the infractions db entry so that it reflects the state of the rule at the time of the warning
+                embed = discord.Embed(
+                    title=f"Infraction #{index} | Rule - Title | warning moderator",
+                    description=
+                )
+
+    except Exception as e: # invoke our custom error handler
+        try:
+            raise GenericError(e)
+        except Exception as e:
+            await on_generic_error(interaction, e)
 
 
 """
@@ -107,7 +152,7 @@ class ModCommands(commands.Cog):
 
 
     # ping command to check if the bot is responding
-    @commands.command(name='ping', help='Ping the bot')
+    @commands.command(name='ping', aliases=['hello', 'ehlo', 'helo'], help='Use to check if modbot is online and responding.')
     @commands.has_any_role(*constants.any_elevated_role)
     async def ping(self, ctx):
         print(f"{ctx.author} used PING in {ctx.channel.name}")
@@ -116,7 +161,7 @@ class ModCommands(commands.Cog):
 
 
     # command to sync interactions - must be done whenever the bot has appcommands added/removed
-    @commands.command(name='sync', help='Synchronise bot interactions with server')
+    @commands.command(name='sync', help='Synchronise modbot interactions with server')
     @commands.has_any_role(*constants.any_elevated_role)
     async def sync(self, ctx):
         print(f"Interaction sync called from {ctx.author.display_name}")
@@ -129,3 +174,5 @@ class ModCommands(commands.Cog):
             except Exception as e:
                 print(f"Tree sync failed: {e}.")
                 return await ctx.send(f"Failed to sync bot tree: {e}")
+            
+

@@ -21,7 +21,8 @@ DATA_DIR = os.getenv('PTN_MODBOT_DATA_DIR', TESTING_DATA_PATH)
 
 # database paths
 DB_PATH = os.path.join(DATA_DIR, 'database') # path to database directory
-INFRACTION_DB_PATH = os.path.join(DATA_DIR, 'database', 'infraction.db') # path to infractions database
+INFRACTIONS_DB_PATH = os.path.join(DATA_DIR, 'database', 'infractions.db') # path to infractions database
+RULES_DB_PATH = os.path.join(DATA_DIR, 'database', 'rules.db') # path to rule database
 BACKUP_DB_PATH = os.path.join(DATA_DIR, 'database', 'backups') # path to use for direct DB backups
 SQL_PATH = os.path.join(DATA_DIR, 'database', 'db_sql') # path to use for SQL dumps
 
@@ -73,8 +74,12 @@ error_gifs = [
 ]
 
 
-# images and icons used in embeds
-
+# infractions colour map
+infraction_color_mapping = {
+    1: discord.Color.gold(),   # Yellow
+    2: discord.Color.orange(),  # Orange
+    3: discord.Color.red(),     # Red
+}
 
 
 # define constants based on prod or test environment

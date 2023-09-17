@@ -25,17 +25,6 @@ from ptn.modbot.constants import bot
 STARTUP FUNCTIONS
 """
 
-# ensure all paths function for a clean install
-def build_directory_tree_on_startup():
-    print("Building directory tree...")
-    try:
-        os.makedirs(constants.DB_PATH, exist_ok=True) # /database - the main database files
-        os.makedirs(constants.SQL_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
-        os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
-    except Exception as e:
-        print(f"Error building directory tree: {e}")
-
-
 # build or modify database as needed on startup
 def build_database_on_startup():
     print("Building database...")
@@ -47,7 +36,8 @@ def build_database_on_startup():
         #       obj (sqlite db obj): sqlite connection to db
         #       create (str): sql create statement for table
         database_table_map = {
-            'infractions' : {'obj': infraction_db, 'create': infractions_table_create}
+            'infractions' : {'obj': infractions_db, 'create': infractions_table_create},
+            'rules' : {'obj': rules_db, 'create': rules_table_create}
         }
 
         # check database exists, create from scratch if needed
@@ -74,8 +64,8 @@ infractions_table_create = '''
     )
     '''
 
-# enumerate infraction database columns
-class InfractionDbFields(enum.Enum):
+# enumerate infractions database columns
+class InfractionsDbFields(enum.Enum):
     entry_id = "entry_id"
     warned_user = "warned_user"
     warning_moderator = "warning_moderator"
@@ -85,7 +75,33 @@ class InfractionDbFields(enum.Enum):
     thread_id = "thread_id"
 
 # list of infractions table columns
-infractions_table_columns = [member.value for member in InfractionDbFields]
+infractions_table_columns = [member.value for member in InfractionsDbFields]
+
+
+# defining rules table for database creation
+rules_table_create = '''
+    CREATE TABLE rules(
+        entry_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        rule_number INTEGER NOT NULL,
+        rule_title TEXT NOT NULL,
+        short_text TEXT NOT NULL,
+        long_text TEXT NOT NULL,
+        message_id INTEGER
+    )
+    '''
+
+# enumerate rules database columns
+class RulesDbFields(enum.Enum):
+    entry_id = "entry_id"
+    rule_number = "rule_number"
+    rule_title = "rule_title"
+    short_text = "short_text"
+    long_text = "long_text"
+    message_id = "message_id"
+
+# list of rules table columns
+rules_table_columns = [member.value for member in RulesDbFields]
+
 
 
 # function to check if a given table exists in a given database
@@ -125,19 +141,24 @@ def create_missing_table(table, db_obj, create_stmt):
 
 
 """
-DATABASE OBJECT
+DATABASE OBJECTS
 
 Database connection, cursor, and lock
 """
 
+# connect to infractions database
+infractions_conn = sqlite3.connect(constants.INFRACTIONS_DB_PATH)
+infractions_conn.row_factory = sqlite3.Row
+infractions_db = infractions_conn.cursor()
 
-# connect to infraction database
-infraction_conn = sqlite3.connect(constants.INFRACTION_DB_PATH)
-infraction_conn.row_factory = sqlite3.Row
-infraction_db = infraction_conn.cursor()
+# connect to rules database
+rules_conn = sqlite3.connect(constants.RULES_DB_PATH)
+rules_conn.row_factory = sqlite3.Row
+rules_db = rules_conn.cursor()
 
-# lock infraction db
-infraction_db_lock = asyncio.Lock()
+# db locks
+infractions_db_lock = asyncio.Lock()
+rules_db_lock = asyncio.Lock()
 
 
 """
@@ -150,7 +171,7 @@ DATABASE EDIT FUNCTIONS
 """
 
 
-# find an infraction in the db
+# find infractions in the db
 async def find_infraction(searchterm, searchcolumn):
     print(f"Called find_infraction with {searchterm}, {searchcolumn}")
     """
@@ -161,14 +182,22 @@ async def find_infraction(searchterm, searchcolumn):
     :returns: A list of InfractionData objects
     :rtype: InfractionData
     """
-    infraction_db.execute(
+    infractions_db.execute(
         f"SELECT * FROM infractions WHERE {searchcolumn} LIKE (?)", (f'%{searchterm}%',)
     )
-    infraction_data = [InfractionData(infraction) for infraction in infraction_db.fetchall()]
+    infraction_data = [InfractionData(infraction) for infraction in infractions_db.fetchall()]
     for infraction in infraction_data:
         print(infraction) # calls the __str__ method to print the contents of the instantiated class object
 
     return infraction_data
+
+# shortcut to find infractions by a user
+async def find_infraction_by_user(user):
+    await find_infraction(user, InfractionsDbFields.warned_user.value)
+
+# shortcut to find infractions by an ID
+async def find_infraction_by_dbid(id):
+    await find_infraction(id, InfractionsDbFields.entry_id.value)
 
 
 # Remove warning from database
@@ -177,13 +206,13 @@ async def delete_single_warning(entry_id):
     Function to lookup a warning by its Primary Key and delete it.
     """
     print(f"Attempting to delete entry {entry_id}.")
-    warning = find_infraction(entry_id, InfractionDbFields.entry_id.value)
+    warning = find_infraction(entry_id, InfractionsDbFields.entry_id.value)
     try:
-        await infraction_db_lock.acquire()
-        infraction_db.execute(f"DELETE FROM infractions WHERE entry_id = {entry_id}")
-        infraction_conn.commit()
+        await infractions_db_lock.acquire()
+        infractions_db.execute(f"DELETE FROM infractions WHERE entry_id = {entry_id}")
+        infractions_conn.commit()
     finally:
-        infraction_db_lock.release()
+        infractions_db_lock.release()
 
     return
 
@@ -195,9 +224,9 @@ async def delete_all_warnings_for_user(warned_user):
     """
     print(f"Attempting to delete all entries for {warned_user}.")
     try:
-        await infraction_db_lock.acquire()
-        infraction_db.execute(f"DELETE FROM infractions WHERE warned_user = {warned_user}")
-        infraction_conn.commit()
+        await infractions_db_lock.acquire()
+        infractions_db.execute(f"DELETE FROM infractions WHERE warned_user = {warned_user}")
+        infractions_conn.commit()
     finally:
-        infraction_db_lock.release()
+        infractions_db_lock.release()
     return
