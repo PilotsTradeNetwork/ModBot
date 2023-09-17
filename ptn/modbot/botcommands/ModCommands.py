@@ -84,6 +84,7 @@ async def context_view_infractions(interaction:  discord.Interaction, member: di
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             embeds = [] # create an empty list to hold our embeds
+            # alternatively we might send each warning individually with a delete button
             for index, infraction in enumerate(infractions, start=1):
                 color = infraction_color_mapping.get(index, discord.Color.red()) # colours to use for successive embeds
 
@@ -93,8 +94,11 @@ async def context_view_infractions(interaction:  discord.Interaction, member: di
                 # or we could pickle the entire rule object into the infractions db entry so that it reflects the state of the rule at the time of the warning
                 embed = discord.Embed(
                     title=f"Infraction #{index} | Rule - Title | warning moderator",
-                    description=
+                    description=infraction.warning_reason, # also want hammertime of the warning time
+                    color=color
                 )
+
+            await interaction.response.send_message(embed=embeds, ephemeral=True)
 
     except Exception as e: # invoke our custom error handler
         try:
