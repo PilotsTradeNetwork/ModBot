@@ -58,7 +58,8 @@ infractions_table_create = '''
         warned_user INTEGER NOT NULL,
         warning_moderator INTEGER NOT NULL,
         warning_time INTEGER NOT NULL,
-        rule_broken INTEGER,
+        rule_broken_no INTEGER,
+        rule_broken_text TEXT,
         warning_reason TEXT,
         thread_id INTEGER
     )
@@ -70,7 +71,8 @@ class InfractionsDbFields(enum.Enum):
     warned_user = "warned_user"
     warning_moderator = "warning_moderator"
     warning_time = "warning_time"
-    rule_broken = "rule_broken"
+    rule_broken_no = "rule_broken_no"
+    rule_broken_text = "rule_broken_text"
     warning_reason = "warning_reason"
     thread_id = "thread_id"
 
