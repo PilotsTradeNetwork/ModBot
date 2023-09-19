@@ -52,7 +52,7 @@ async def on_generic_error(
     interaction: Interaction,
     error
 ): # an error handler for our custom errors
-    try:
+    try: # this outputs the error to bot-spam for logging purposes
         spamchannel = bot.get_channel(channel_botspam())
         spam_embed = discord.Embed(
             description=f"Error from `{interaction.command.name}` in <#{interaction.channel.id}> called by <@{interaction.user.id}>: ```{error}```",
@@ -62,7 +62,7 @@ async def on_generic_error(
     except Exception as e:
         print(e)
 
-    if isinstance(error, GenericError):
+    if isinstance(error, GenericError): # Our bog-standard "hey, an error!" response. Just displays the raw error text to the user without explanation
         print(f"Generic error raised: {error}")
         embed = discord.Embed(
             description=f"❌ {error}",
@@ -86,7 +86,7 @@ async def on_generic_error(
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             except:
                 await interaction.followup.send(embed=embed, ephemeral=True)
-        else: # message should be public - use for CCO commands
+        else: # message should be public
             try:
                 await interaction.response.send_message(embed=embed)
             except:
