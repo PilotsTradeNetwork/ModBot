@@ -14,8 +14,8 @@ from discord.app_commands import AppCommandError
 
 # import local constants
 import ptn.modbot.constants as constants
-from ptn.modbot.constants import bot, channel_botspam
-
+from ptn.modbot.constants import channel_botspam
+from ptn.modbot.bot import bot
 # custom errors
 class CommandChannelError(app_commands.CheckFailure): # channel check error
     def __init__(self, permitted_channel, formatted_channel_list):
