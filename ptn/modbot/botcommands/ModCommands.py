@@ -111,7 +111,7 @@ class ModCommands(commands.Cog):
                 except Exception as e:
                     await interaction.response.send_message(f"Could not mention member. {e}", ephemeral=True)
             await interaction.channel.send(embed=rules_list[rule_number - 1])
-            await interaction.response.send_message(f"Sent rule in {rules_channel_object.name}", ephemeral=True)
+            await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
 
         except IndexError:
             await interaction.response.send_message("That rule doesn't exist!", ephemeral=True)
