@@ -10,14 +10,14 @@ import os
 # import build functions
 from ptn.modbot.database.database import build_database_on_startup, build_directory_tree_on_startup
 
-build_directory_tree_on_startup() # build directory structure
+from ptn.modbot.bot import bot
 
 # import bot Cogs
 from ptn.modbot.botcommands.ModCommands import ModCommands
 from ptn.modbot.botcommands.DatabaseInteraction import DatabaseInteraction
 
 # import bot object, token, production status
-from ptn.modbot.constants import bot, TOKEN, _production, DATA_DIR
+from ptn.modbot.constants import TOKEN, _production, DATA_DIR
 
 print(f"Data dir is {DATA_DIR} from {os.path.join(os.getcwd(), 'ptn', 'modbot', DATA_DIR, '.env')}")
 

@@ -18,8 +18,7 @@ from ptn.modbot.classes.InfractionData import InfractionData
 
 # local constants
 import ptn.modbot.constants as constants
-from ptn.modbot.constants import bot
-
+from ptn.modbot.bot import bot
 
 """
 STARTUP FUNCTIONS
@@ -34,6 +33,9 @@ def build_directory_tree_on_startup():
         os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
     except Exception as e:
         print(f"Error building directory tree: {e}")
+
+
+build_directory_tree_on_startup()  # build directory structure
 
 
 # build or modify database as needed on startup
@@ -70,7 +72,7 @@ infractions_table_create = '''
         warning_time INTEGER NOT NULL,
         rule_broken INTEGER,
         warning_reason TEXT,
-        thread_id INTEGER,
+        thread_id INTEGER
     )
     '''
 
@@ -130,9 +132,8 @@ DATABASE OBJECT
 Database connection, cursor, and lock
 """
 
-
 # connect to infraction database
-infraction_conn = sqlite3.connect(constants.infraction_DB_PATH)
+infraction_conn = sqlite3.connect(constants.INFRACTIONS_DB_PATH)
 infraction_conn.row_factory = sqlite3.Row
 infraction_db = infraction_conn.cursor()
 
