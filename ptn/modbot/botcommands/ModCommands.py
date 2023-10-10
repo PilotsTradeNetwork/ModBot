@@ -1,14 +1,15 @@
 # discord.py
 import discord
+from discord import app_commands
+from discord.app_commands import describe
 from discord.ext import commands
 
-# import bot
-from ptn.modbot.bot import bot
-
+import ptn.modbot.constants as constants
 # local constants
 from ptn.modbot._metadata import __version__
-import ptn.modbot.constants as constants
-from ptn.modbot.constants import role_council, role_mod
+# import bot
+from ptn.modbot.bot import bot
+from ptn.modbot.constants import role_council, role_mod, channel_rules
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error
 """
@@ -82,3 +83,35 @@ class ModCommands(commands.Cog):
             except Exception as e:
                 print(f"Tree sync failed: {e}.")
                 return await ctx.send(f"Failed to sync bot tree: {e}")
+
+    @app_commands.command(name='rule', description='Prints a rule buy its number, with option to mention a member')
+    @commands.has_any_role(*constants.any_elevated_role)
+    @describe(rule_number='Number of the rule you wish to print')
+    @describe(member='[Optional] Mention a user based off user id')
+    async def rule(self, interaction: discord.Interaction, rule_number: int, member: str = None):
+        if rule_number <= 0:
+            await interaction.response.send_message("Rule number must be positive.", ephemeral=True)
+            return
+
+        guild = interaction.channel.guild
+        # get rule channel from guild
+        rules_channel_object = guild.get_channel(channel_rules())
+        # fetch rules message from rules channel
+        rules_message = await rules_channel_object.fetch_message(constants.rules_message())
+
+        # get the rule embeds from the message
+        rules_list = rules_message.embeds
+
+        try:
+            if member:
+                try:
+                    member = interaction.channel.guild.get_member(int(member))
+
+                    await interaction.channel.send(member.mention)
+                except Exception as e:
+                    await interaction.response.send_message(f"Could not mention member. {e}", ephemeral=True)
+            await interaction.channel.send(embed=rules_list[rule_number - 1])
+            await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
+
+        except IndexError:
+            await interaction.response.send_message("That rule doesn't exist!", ephemeral=True)

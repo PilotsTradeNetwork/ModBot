@@ -44,16 +44,20 @@ bot = commands.Bot(command_prefix='mod!', intents=discord.Intents.all())
 PROD_DISCORD_GUILD = 800080948716503040 # PTN server ID
 PROD_CHANNEL_EVIDENCE = 845362369739096174 # PTN mod-evidence channel
 PROD_CHANNEL_BOTSPAM = 801258393205604372 # PTN bot-spam channel
+PROD_CHANNEL_RULES = 800098038727180352 # PTN rules channel
 PROD_ROLE_COUNCIL = 800091021852803072 # PTN Council role
 PROD_ROLE_MOD = 813814494563401780 # PTN Mod role
+PROD_RULES_MESSAGE = 1067751625529229373 # PTN Rules Message - there's probably a better way of doing this
 
 
 # Testing variables
 TEST_DISCORD_GUILD = 818174236480897055 # PANTS server ID
 TEST_CHANNEL_EVIDENCE = 1152264665288683550 # PANTS mod-evidence channel
 TEST_CHANNEL_BOTSPAM = 1152273868073996298 # PANTS bot spam channel
+TEST_CHANNEL_RULES = 1034743086389141595 # PANTS rules channel
 TEST_ROLE_COUNCIL = 877586918228000819 # PANTS Council role
 TEST_ROLE_MOD = 903292469049974845 # PANTS Mod role
+TEST_RULES_MESSAGE = None # PANTS Rules Message
 
 
 # Embed colours
@@ -92,6 +96,12 @@ def role_council():
 
 def role_mod():
     return PROD_ROLE_MOD if _production else TEST_ROLE_MOD
+
+def channel_rules():
+    return PROD_CHANNEL_RULES if _production else TEST_CHANNEL_RULES
+
+def rules_message():
+    return PROD_RULES_MESSAGE if _production else TEST_RULES_MESSAGE
 
 
 any_elevated_role = [role_council(), role_mod()]
