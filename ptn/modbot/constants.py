@@ -107,7 +107,7 @@ def rules_message():
 any_elevated_role = [role_council(), role_mod()]
 
 
-async def get_guild():
+def get_guild():
     """
     Return bot guild instance for use in get_member()
     """

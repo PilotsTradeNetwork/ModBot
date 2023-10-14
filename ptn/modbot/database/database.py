@@ -162,9 +162,16 @@ async def find_infraction(searchterm, searchcolumn):
     :returns: A list of InfractionData objects
     :rtype: InfractionData
     """
-    infraction_db.execute(
-        f"SELECT * FROM infractions WHERE {searchcolumn} LIKE (?)", (f'%{searchterm}%',)
-    )
+    if searchcolumn in [InfractionDbFields.entry_id.value, InfractionDbFields.warned_user.value,
+                        InfractionDbFields.warning_moderator.value]:
+        infraction_db.execute(
+            f"SELECT * FROM infractions WHERE {searchcolumn} = ?", (searchterm,)
+        )
+    else:
+        infraction_db.execute(
+            f"SELECT * FROM infractions WHERE {searchcolumn} LIKE ?", (f'%{searchterm}%',)
+        )
+
     infraction_data = [InfractionData(infraction) for infraction in infraction_db.fetchall()]
     for infraction in infraction_data:
         print(infraction) # calls the __str__ method to print the contents of the instantiated class object
@@ -202,3 +209,38 @@ async def delete_all_warnings_for_user(warned_user):
     finally:
         infraction_db_lock.release()
     return
+
+# Insert an infraction into the database
+async def insert_infraction(warned_user, warning_moderator, warning_time, rule_broken=None, warning_reason=None, thread_id=None):
+    """
+    Inserts a new infraction into the infractions table.
+
+    :param int warned_user: ID of the user being warned
+    :param int warning_moderator: ID of the moderator issuing the warning
+    :param int warning_time: Unix timestamp of when the warning was issued
+    :param int rule_broken: (Optional) ID of the rule broken, if any
+    :param str warning_reason: (Optional) Reason for the warning
+    :param int thread_id: (Optional) Thread ID, if any
+    :returns: The row ID of the newly inserted infraction
+    :rtype: int
+    """
+
+    print(f"Inserting infraction for user {warned_user} by moderator {warning_moderator}.")
+
+    try:
+        await infraction_db_lock.acquire()
+
+        infraction_db.execute(
+            f"INSERT INTO infractions (warned_user, warning_moderator, warning_time, rule_broken, warning_reason, thread_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (warned_user, warning_moderator, warning_time, rule_broken, warning_reason, thread_id)
+        )
+        infraction_conn.commit()
+
+        # Fetch the ID of the last row inserted (this is our infraction's entry ID)
+        entry_id = infraction_db.lastrowid
+    finally:
+        infraction_db_lock.release()
+
+    print(f"Infraction inserted with entry ID {entry_id}.")
+    return entry_id
+

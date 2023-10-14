@@ -1,17 +1,24 @@
 # discord.py
+from datetime import datetime
+
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.app_commands import describe
 from discord.ext import commands
 
 import ptn.modbot.constants as constants
+
 # local constants
 from ptn.modbot._metadata import __version__
+
 # import bot
 from ptn.modbot.bot import bot
-from ptn.modbot.constants import role_council, role_mod, channel_rules
+from ptn.modbot.constants import role_council, role_mod
+
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error
+from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule
+
 """
 A primitive global error handler for text commands.
 
@@ -43,6 +50,50 @@ async def on_command_error(ctx, error):
 
     embed = discord.Embed(description=f"❌ {message}", color=constants.EMBED_COLOUR_ERROR)
     await ctx.send(embed=embed)
+
+
+'''
+MODAL FOR MESSAGE DELETION
+'''
+
+
+class InfractionReport(ui.Modal, title='Delete and Report Message'):
+
+    # pass variables into the modal for throughput
+    def __init__(self, warned_user, warning_moderator, warning_time, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.warned_user = warned_user
+        self.warning_moderator = warning_moderator
+        self.warning_time = warning_time
+
+    rule_number = ui.TextInput(
+        label='Rule Broken',
+        placeholder='Number (i.e. \'1\') of the rule broken...'
+    )
+    warning_reason = ui.TextInput(
+        label='Warning Reason',
+        style=discord.TextStyle.long,
+        placeholder='Describe the infraction...',
+        max_length=300
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            f'EXAMPLE: \n'
+            f'WARNED USER: {self.warned_user}\n'
+            f'WARNING MODERATOR: {self.warning_moderator}\n'
+            f'WARNING TIME: {self.warning_time}\n'
+            f'RULE BROKEN: {self.rule_number}\n'
+            f'WARNING REASON: {self.warning_reason}',
+            ephemeral=True
+        )
+
+
+"""
+COG FOR COMMANDS/SLASH COMMANDS
+"""
+
+
 class ModCommands(commands.Cog):
     def __init__(self, bot: commands.Cog):
         self.bot = bot
@@ -84,34 +135,92 @@ class ModCommands(commands.Cog):
                 print(f"Tree sync failed: {e}.")
                 return await ctx.send(f"Failed to sync bot tree: {e}")
 
+    # command to display a rule with an option to ping a member
     @app_commands.command(name='rule', description='Prints a rule buy its number, with option to mention a member')
     @commands.has_any_role(*constants.any_elevated_role)
     @describe(rule_number='Number of the rule you wish to print')
     @describe(member='[Optional] Mention a user based off user id')
     async def rule(self, interaction: discord.Interaction, rule_number: int, member: str = None):
-        if rule_number <= 0:
-            await interaction.response.send_message("Rule number must be positive.", ephemeral=True)
+
+        # get member object
+        if member:
+            try:
+                member = interaction.guild.get_member(int(member))
+            except ValueError:
+                interaction.response.send_message(f'\'{member}\' is not a valid user id.')
+                return
+
+        await get_rule(interaction=interaction, rule_number=rule_number, member=member)
+
+    # relies on getting member infractions
+    @app_commands.command(name='warn', description='view moderator infractions, with option to send warning DM')
+    @commands.has_any_role(*constants.any_elevated_role)
+    @describe(member_id='id of the member')
+    async def warn(self, interaction: discord.Interaction, member_id: str):
+        print(f"warn called by {interaction.user.display_name}")
+
+        # get guild
+        guild = interaction.guild
+
+        # get member object
+        member = guild.get_member(int(member_id))
+
+        spamchannel = bot.get_channel(constants.channel_botspam())
+        await display_infractions(guild=guild, member=member, interaction=interaction)
+
+    # command to find a user's infraction thread, if exists
+    @app_commands.command(name='find_thread', description='finds a thread given a user\'s id')
+    @commands.has_any_role(*constants.any_elevated_role)
+    @describe(id='id of the member')
+    async def find_thread(self, interaction: discord.Interaction, id: str):
+        # check if user is in guild
+        guild = interaction.guild
+        try:
+            member_object = guild.get_member(int(id))
+
+        except ValueError:
+            embed = discord.Embed(
+                description=f"❌ {id} is not a valid integer.",
+                color=constants.EMBED_COLOUR_ERROR
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        guild = interaction.channel.guild
-        # get rule channel from guild
-        rules_channel_object = guild.get_channel(channel_rules())
-        # fetch rules message from rules channel
-        rules_message = await rules_channel_object.fetch_message(constants.rules_message())
+        # find and send thread id
+        await find_thread(member=member_object, guild=guild, interaction=interaction)
 
-        # get the rule embeds from the message
-        rules_list = rules_message.embeds
 
-        try:
-            if member:
-                try:
-                    member = interaction.channel.guild.get_member(int(member))
+# An interaction to view a user's infractions
+@bot.tree.context_menu(name='View Infractions')
+@commands.has_any_role(*constants.any_elevated_role)
+async def view_infractions(interaction: discord.Interaction, member: discord.Member):
+    print(f"view_infractions called by {interaction.user.display_name} for {member.display_name}")
+    guild = interaction.guild
+    spamchannel = bot.get_channel(constants.channel_botspam())
 
-                    await interaction.channel.send(member.mention)
-                except Exception as e:
-                    await interaction.response.send_message(f"Could not mention member. {e}", ephemeral=True)
-            await interaction.channel.send(embed=rules_list[rule_number - 1])
-            await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
+    await display_infractions(interaction=interaction, member=member, guild=guild)
 
-        except IndexError:
-            await interaction.response.send_message("That rule doesn't exist!", ephemeral=True)
+
+# An interaction to delete a violating message and send it to the infractions thread, with option to DM the user
+@bot.tree.context_menu(name='Infraction Message')
+@commands.has_any_role(*constants.any_elevated_role)
+async def infraction_message(interaction: discord.Interaction, message: discord.Message):
+    print(
+        f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in {message.channel.id}.")
+    if message.author.bot:
+        embed = discord.Embed(
+            description=f"❌ You cannot warn bots!",
+            color=constants.EMBED_COLOUR_ERROR
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Infractions need 3 things: warned_user id, warning_moderator id, warning_time
+
+    warned_user = message.author.id
+    warning_moderator = interaction.user.id
+    warning_time = datetime.utcnow()
+
+    await interaction.response.send_modal(
+        InfractionReport(warned_user=warned_user, warning_time=warning_time, warning_moderator=warning_moderator))

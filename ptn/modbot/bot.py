@@ -28,7 +28,7 @@ Bot object
 
 
 # define bot object
-class ButtonRoleBot(commands.Bot):
+class ModBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
         intents.message_content = True
@@ -59,4 +59,4 @@ class ButtonRoleBot(commands.Bot):
         print('-----')
 
 
-bot = ButtonRoleBot()
+bot = ModBot()
