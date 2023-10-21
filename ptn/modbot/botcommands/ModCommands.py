@@ -16,7 +16,7 @@ from ptn.modbot.bot import bot
 from ptn.modbot.constants import role_council, role_mod
 
 # local modules
-from ptn.modbot.modules.ErrorHandler import on_app_command_error
+from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule
 
 """
@@ -143,12 +143,15 @@ class ModCommands(commands.Cog):
     async def rule(self, interaction: discord.Interaction, rule_number: int, member: str = None):
 
         # get member object
-        if member:
-            try:
+        try:
+            if member:
                 member = interaction.guild.get_member(int(member))
-            except ValueError:
-                interaction.response.send_message(f'\'{member}\' is not a valid user id.')
-                return
+        except Exception as e:
+            try:
+                raise CustomError(f"Member input must be an number! \n`{e}`")
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
 
         await get_rule(interaction=interaction, rule_number=rule_number, member=member)
 
@@ -176,15 +179,12 @@ class ModCommands(commands.Cog):
         # check if user is in guild
         guild = interaction.guild
         try:
-            member_object = guild.get_member(int(id))
-
-        except ValueError:
-            embed = discord.Embed(
-                description=f"❌ {id} is not a valid integer.",
-                color=constants.EMBED_COLOUR_ERROR
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+            member_object = interaction.guild.get_member(int(id))
+        except Exception as e:
+            try:
+                raise CustomError(f"ID input must be an number! \n`{e}`")
+            except Exception as e:
+                return await on_generic_error(interaction, e)
 
         # find and send thread id
         await find_thread(member=member_object, guild=guild, interaction=interaction)
@@ -208,13 +208,10 @@ async def infraction_message(interaction: discord.Interaction, message: discord.
     print(
         f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in {message.channel.id}.")
     if message.author.bot:
-        embed = discord.Embed(
-            description=f"❌ You cannot warn bots!",
-            color=constants.EMBED_COLOUR_ERROR
-        )
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        return
+        try:
+            raise CustomError("You cannot warn bots!")
+        except Exception as e:
+            return await on_generic_error(interaction, e)
 
     # Infractions need 3 things: warned_user id, warning_moderator id, warning_time
 

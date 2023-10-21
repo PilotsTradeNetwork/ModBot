@@ -4,6 +4,7 @@ from ptn.modbot import constants
 from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules
 from ptn.modbot.bot import bot
 from ptn.modbot.database.database import find_infraction
+from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error
 
 """
 THREAD HELPERS
@@ -13,7 +14,7 @@ Used for thread creation/interactions
 
 
 # create thread
-def create_thread(member: discord.Member, guild: discord.Member):
+def create_thread(member: discord.Member, guild: discord.Guild):
     # get member info
     member_name = member.name
     member_id = member.id
@@ -45,14 +46,15 @@ async def find_thread(interaction: discord.Interaction, member: discord.Member, 
     print(thread)
 
     if thread:
-        await interaction.response.send_message(f'<#{thread.id}>', ephemeral=True)
+        return thread
 
     else:
-        embed = discord.Embed(
-            description=f"❓ That thread doesn't exist for user <@{member_id}>.",
-            color=discord.Color.yellow()
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        #embed = discord.Embed(
+        #    description=f"❓ That thread doesn't exist for user <@{member_id}>.",
+        #    color=discord.Color.yellow()
+        #)
+        #await interaction.response.send_message(embed=embed, ephemeral=True)
+        return False
 
 
 """
@@ -80,7 +82,7 @@ async def display_infractions(interaction: discord.Interaction, member: discord.
         embed.set_footer(text=f'ID: {member.id}')
 
         # find if thread exists
-        thread = find_thread(guild=guild, user_id=member.id)
+        thread = await find_thread(guild=guild, member=member, interaction=interaction)
         if thread:
             embed.description = f'Thread: <#{thread.id}>'
 
@@ -96,12 +98,10 @@ async def display_infractions(interaction: discord.Interaction, member: discord.
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     except Exception as e:
-        embed = discord.Embed(
-            description=f"❌ Error in retrieving infractions: {e}",
-            color=constants.EMBED_COLOUR_ERROR
-        )
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            raise CustomError(f"Could not retrieve infraction: {e}")
+        except Exception as e:
+            return await on_generic_error(interaction, e)
 
 
 """
@@ -127,14 +127,14 @@ async def get_rule(rule_number: int, interaction: discord.Interaction, member: d
     # get the rule embeds from the message
     rules_list = rules_message.embeds
 
-    try:
-        if member:
+    if member:
+        try:
+            await interaction.channel.send(member.mention)
+        except Exception as e:
             try:
-                await interaction.channel.send(member.mention)
+                raise CustomError(f"Could not mention member: {e}")
             except Exception as e:
-                await interaction.response.send_message(f"Could not mention member. {e}", ephemeral=True)
-        await interaction.channel.send(embed=rules_list[rule_number - 1])
-        await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
+                return await on_generic_error(interaction, e)
+    await interaction.channel.send(embed=rules_list[rule_number - 1])
+    await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
 
-    except IndexError:
-        await interaction.response.send_message("That rule doesn't exist!", ephemeral=True)
