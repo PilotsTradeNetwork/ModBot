@@ -1,4 +1,5 @@
 # discord.py
+import time
 from datetime import datetime
 
 import discord
@@ -14,10 +15,11 @@ from ptn.modbot._metadata import __version__
 # import bot
 from ptn.modbot.bot import bot
 from ptn.modbot.constants import role_council, role_mod
+from ptn.modbot.database.database import insert_infraction, find_infraction
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
-from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule
+from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user
 
 """
 A primitive global error handler for text commands.
@@ -25,68 +27,122 @@ A primitive global error handler for text commands.
 returns: error message to user and log
 """
 
+
 @bot.listen()
 async def on_command_error(ctx, error):
     print(error)
     if isinstance(error, commands.BadArgument):
-        message=f'Bad argument: {error}'
+        message = f'Bad argument: {error}'
 
     elif isinstance(error, commands.CommandNotFound):
-        message=f"Sorry, were you talking to me? I don't know that command."
+        message = f"Sorry, were you talking to me? I don't know that command."
 
     elif isinstance(error, commands.MissingRequiredArgument):
-        message=f"Sorry, that didn't work.\n• Check you've included all required arguments." \
-                 "\n• If using quotation marks, check they're opened *and* closed, and are in the proper place.\n• Check quotation" \
-                 " marks are of the same type, i.e. all straight or matching open/close smartquotes."
+        message = f"Sorry, that didn't work.\n• Check you've included all required arguments." \
+                  "\n• If using quotation marks, check they're opened *and* closed, and are in the proper place.\n• Check quotation" \
+                  " marks are of the same type, i.e. all straight or matching open/close smartquotes."
 
     elif isinstance(error, commands.MissingPermissions):
-        message='Sorry, you\'re missing the required permission for this command.'
+        message = 'Sorry, you\'re missing the required permission for this command.'
 
     elif isinstance(error, commands.MissingAnyRole):
-        message=f'You require one of the following roles to use this command:\n<@&{role_council()}> • <@&{role_mod()}>'
+        message = f'You require one of the following roles to use this command:\n<@&{role_council()}> • <@&{role_mod()}>'
 
     else:
-        message=f'Sorry, that didn\'t work: {error}'
+        message = f'Sorry, that didn\'t work: {error}'
 
     embed = discord.Embed(description=f"❌ {message}", color=constants.EMBED_COLOUR_ERROR)
     await ctx.send(embed=embed)
 
 
 '''
-MODAL FOR MESSAGE DELETION
+MODALS FOR WARNS
 '''
 
 
-class InfractionReport(ui.Modal, title='Delete and Report Message'):
+class InfractionReport(ui.Modal, title='Warn User'):
 
     # pass variables into the modal for throughput
-    def __init__(self, warned_user, warning_moderator, warning_time, *args, **kwargs):
+    def __init__(self, warned_user: discord.Member, warning_moderator: discord.Member, warning_time: int,
+                 interaction: discord.Interaction, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.warned_user = warned_user
         self.warning_moderator = warning_moderator
         self.warning_time = warning_time
+        self.interaction = interaction
 
     rule_number = ui.TextInput(
         label='Rule Broken',
-        placeholder='Number (i.e. \'1\') of the rule broken...'
+        placeholder='Number (i.e. \'1\') of the rule broken...',
+        required=True
     )
     warning_reason = ui.TextInput(
         label='Warning Reason',
         style=discord.TextStyle.long,
         placeholder='Describe the infraction...',
-        max_length=300
+        max_length=300,
+        required=True
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            f'EXAMPLE: \n'
-            f'WARNED USER: {self.warned_user}\n'
-            f'WARNING MODERATOR: {self.warning_moderator}\n'
-            f'WARNING TIME: {self.warning_time}\n'
-            f'RULE BROKEN: {self.rule_number}\n'
-            f'WARNING REASON: {self.warning_reason}',
-            ephemeral=True
-        )
+        # await interaction.response.send_message(
+        #     f'EXAMPLE: \n'
+        #     f'WARNED USER: {self.warned_user}\n'
+        #     f'WARNING MODERATOR: {self.warning_moderator}\n'
+        #     f'WARNING TIME: {self.warning_time}\n'
+        #     f'RULE BROKEN: {self.rule_number}\n'
+        #     f'WARNING REASON: {self.warning_reason}',
+        #     ephemeral=True
+        # )
+        warning_reason = str(self.warning_reason)
+        await warn_user(warned_user=self.warned_user, interaction=interaction,
+                        warning_moderator=self.warning_moderator, warning_reason=warning_reason,
+                        warning_time=int(time.time()), rule_number=int(str(self.rule_number)))
+
+class MessageInfractionReport(ui.Modal, title='Delete and create infraction from message'):
+    def __init__(self, interaction: discord.Interaction, message: discord.Message, attachments: list):
+        super().__init__()
+        self.interaction = interaction
+        self.message = message
+        self.attachments = attachments
+
+    rule_number = ui.TextInput(
+        label='Rule Broken',
+        placeholder='Number (i.e. \'1\') of the rule broken...',
+        required=True
+    )
+    warning_description = ui.TextInput(
+        label='Warning Context [Optional]',
+        style=discord.TextStyle.long,
+        placeholder='Describe the infraction...',
+        max_length=300,
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        warned_user = self.message.author
+        warning_moderator = interaction.user
+        warning_time = int(time.time())
+        rule_broken = int(str(self.rule_number))
+
+
+
+        warning_reason = "Infraction Message:\n"
+
+        if self.warning_description:
+            warning_reason += f"Context: {self.warning_description}\n"
+        if self.attachments:
+            for url in self.attachments:
+                warning_reason += f' Message Attachments: {url}\n'
+
+        if self.message.content:
+            warning_reason += f"\n Message Text: {self.message.content}"
+
+        await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
+                        warning_reason=warning_reason,warning_time=warning_time,rule_number=rule_broken)
+
+        await self.message.delete()
+
 
 
 """
@@ -107,7 +163,7 @@ class ModCommands(commands.Cog):
         tree = self.bot.tree
         tree.on_error = self._old_tree_error
 
-        # ping command to check if the bot is responding
+    # ping command to check if the bot is responding
     @commands.command(name='ping', aliases=['hello', 'ehlo', 'helo'],
                       help='Use to check if modbot is online and responding.')
     @commands.has_any_role(*constants.any_elevated_role)
@@ -120,7 +176,7 @@ class ModCommands(commands.Cog):
         )
         await ctx.send(embed=embed)
 
-        # command to sync interactions - must be done whenever the bot has appcommands added/removed
+    # command to sync interactions - must be done whenever the bot has appcommands added/removed
     @commands.command(name='sync', help='Synchronise modbot interactions with server')
     @commands.has_any_role(*constants.any_elevated_role)
     async def sync(self, ctx):
@@ -152,24 +208,22 @@ class ModCommands(commands.Cog):
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
-
         await get_rule(interaction=interaction, rule_number=rule_number, member=member)
 
     # relies on getting member infractions
-    @app_commands.command(name='warn', description='view moderator infractions, with option to send warning DM')
+    @app_commands.command(name='warn', description='Warn a user')
     @commands.has_any_role(*constants.any_elevated_role)
-    @describe(member_id='id of the member')
-    async def warn(self, interaction: discord.Interaction, member_id: str):
+    @describe(member='The member to be warned')
+    async def warn(self, interaction: discord.Interaction, member: discord.Member):
         print(f"warn called by {interaction.user.display_name}")
 
-        # get guild
-        guild = interaction.guild
+        warned_user = member
+        warning_moderator = interaction.user
+        warning_time = int(time.time())
 
-        # get member object
-        member = guild.get_member(int(member_id))
-
-        spamchannel = bot.get_channel(constants.channel_botspam())
-        await display_infractions(guild=guild, member=member, interaction=interaction)
+        await interaction.response.send_modal(
+            InfractionReport(warned_user=warned_user, warning_time=warning_time, warning_moderator=warning_moderator,
+                             interaction=interaction))
 
     # command to find a user's infraction thread, if exists
     @app_commands.command(name='find_thread', description='finds a thread given a user\'s id')
@@ -187,7 +241,14 @@ class ModCommands(commands.Cog):
                 return await on_generic_error(interaction, e)
 
         # find and send thread id
-        await find_thread(member=member_object, guild=guild, interaction=interaction)
+        thread = await find_thread(member=member_object, guild=guild, interaction=interaction)
+        if thread:
+            await interaction.response.send_message(f"<#{thread.id}>", ephemeral=True)
+        else:
+            try:
+                raise CustomError("That thread doesn't exist!")
+            except Exception as e:
+                return await on_generic_error(interaction, e)
 
 
 # An interaction to view a user's infractions
@@ -207,17 +268,13 @@ async def view_infractions(interaction: discord.Interaction, member: discord.Mem
 async def infraction_message(interaction: discord.Interaction, message: discord.Message):
     print(
         f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in {message.channel.id}.")
-    if message.author.bot:
-        try:
-            raise CustomError("You cannot warn bots!")
-        except Exception as e:
-            return await on_generic_error(interaction, e)
 
-    # Infractions need 3 things: warned_user id, warning_moderator id, warning_time
+    # Get the message attachments if they exist
+    attachments = message.attachments
+    attachment_urls = []
+    if attachments:
+        for attachment in attachments:
+            attachment_urls.append(attachment.url)
 
-    warned_user = message.author.id
-    warning_moderator = interaction.user.id
-    warning_time = datetime.utcnow()
-
-    await interaction.response.send_modal(
-        InfractionReport(warned_user=warned_user, warning_time=warning_time, warning_moderator=warning_moderator))
+    await interaction.response.send_modal(MessageInfractionReport(interaction=interaction, message=message,
+                                                                  attachments=attachments))
