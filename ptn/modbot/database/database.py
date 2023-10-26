@@ -24,13 +24,14 @@ from ptn.modbot.bot import bot
 STARTUP FUNCTIONS
 """
 
+
 # ensure all paths function for a clean install
 def build_directory_tree_on_startup():
     print("Building directory tree...")
     try:
-        os.makedirs(constants.DB_PATH, exist_ok=True) # /database - the main database files
-        os.makedirs(constants.SQL_PATH, exist_ok=True) # /database/db_sql - DB SQL dumps
-        os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True) # /database/backups - db backups
+        os.makedirs(constants.DB_PATH, exist_ok=True)  # /database - the main database files
+        os.makedirs(constants.SQL_PATH, exist_ok=True)  # /database/db_sql - DB SQL dumps
+        os.makedirs(constants.BACKUP_DB_PATH, exist_ok=True)  # /database/backups - db backups
     except Exception as e:
         print(f"Error building directory tree: {e}")
 
@@ -49,7 +50,7 @@ def build_database_on_startup():
         #       obj (sqlite db obj): sqlite connection to db
         #       create (str): sql create statement for table
         database_table_map = {
-            'infractions' : {'obj': infraction_db, 'create': infractions_table_create}
+            'infractions': {'obj': infraction_db, 'create': infractions_table_create}
         }
 
         # check database exists, create from scratch if needed
@@ -76,6 +77,7 @@ infractions_table_create = '''
     )
     '''
 
+
 # enumerate infraction database columns
 class InfractionDbFields(enum.Enum):
     entry_id = "entry_id"
@@ -85,6 +87,7 @@ class InfractionDbFields(enum.Enum):
     rule_broken = "rule_broken"
     warning_reason = "warning_reason"
     thread_id = "thread_id"
+
 
 # list of infractions table columns
 infractions_table_columns = [member.value for member in InfractionDbFields]
@@ -140,7 +143,6 @@ infraction_db = infraction_conn.cursor()
 # lock infraction db
 infraction_db_lock = asyncio.Lock()
 
-
 """
 DATABASE EDIT FUNCTIONS
 
@@ -174,7 +176,7 @@ async def find_infraction(searchterm, searchcolumn):
 
     infraction_data = [InfractionData(infraction) for infraction in infraction_db.fetchall()]
     for infraction in infraction_data:
-        print(infraction) # calls the __str__ method to print the contents of the instantiated class object
+        print(infraction)  # calls the __str__ method to print the contents of the instantiated class object
 
     return infraction_data
 
