@@ -1,9 +1,11 @@
+from datetime import datetime
+
 import discord
 
 from ptn.modbot import constants
 from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules
 from ptn.modbot.bot import bot
-from ptn.modbot.database.database import find_infraction
+from ptn.modbot.database.database import find_infraction, insert_infraction
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error
 
 """
@@ -15,18 +17,20 @@ Used for thread creation/interactions
 
 # create thread
 def create_thread(member: discord.Member, guild: discord.Guild):
-    # get member info
-    member_name = member.name
-    member_id = member.id
+    try:
+        # get member info
+        member_name = member.name
+        member_id = member.id
 
-    # get channel info
-    print(f'create_thread called for {member_name}')
-    infractions_channel = guild.get_channel_or_thread(channel_evidence())
+        # get channel info
+        print(f'create_thread called for {member_name}')
+        infractions_channel = guild.get_channel_or_thread(channel_evidence())
 
-    # create thread
-    thread_name = f'{member_name} | {member_id}'
-    initial_message = f'<@{member_id}>'
-    infractions_channel.create_thread(name=thread_name, message=initial_message)
+        # create thread
+        thread_name = f'{member_name} | {member_id}'
+        return infractions_channel.create_thread(name=thread_name)
+    except Exception as e:
+        raise CustomError(f"Error in thread creation: {e}")
 
 
 # gets thread by id match in name
@@ -49,11 +53,11 @@ async def find_thread(interaction: discord.Interaction, member: discord.Member, 
         return thread
 
     else:
-        #embed = discord.Embed(
+        # embed = discord.Embed(
         #    description=f"❓ That thread doesn't exist for user <@{member_id}>.",
         #    color=discord.Color.yellow()
-        #)
-        #await interaction.response.send_message(embed=embed, ephemeral=True)
+        # )
+        # await interaction.response.send_message(embed=embed, ephemeral=True)
         return False
 
 
@@ -138,3 +142,68 @@ async def get_rule(rule_number: int, interaction: discord.Interaction, member: d
     await interaction.channel.send(embed=rules_list[rule_number - 1])
     await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
 
+
+async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
+                    warning_reason: str, warning_time: int, rule_number: int):
+    # find and count previous infractions
+    infractions = await find_infraction(warned_user.id, 'warned_user')
+    print(len(infractions))
+    current_infraction_number = len(infractions) + 1
+    # handle thread (find if exists, create if not)
+
+    try:
+        thread = await find_thread(interaction=interaction, member=warned_user, guild=interaction.guild)
+        print(thread)
+
+        if not thread:
+            thread = await create_thread(member=warned_user, guild=interaction.guild)
+            print(f"Created thread with id {thread.id}")
+
+        # post infraction to thread
+        embed = discord.Embed(
+            title=f"Infraction #{current_infraction_number}",
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(
+            name="User",
+            value=f"<@{warned_user.id}>",
+            inline=True
+        )
+        embed.add_field(
+            name="Moderator",
+            value=f"<@{warning_moderator.id}>",
+            inline=True
+        )
+        embed.add_field(
+            name="Reason",
+            value=warning_reason,
+            inline=True
+        )
+
+        await thread.send(embed=embed)
+    except Exception as e:
+        raise CustomError(f"Error in thread handling: {e}")
+
+    # Insert infraction into database
+    try:
+        infraction = await insert_infraction(
+            warned_user=warned_user.id,
+            warning_time=warning_time,
+            warning_moderator=warning_moderator.id,
+            rule_broken=rule_number,
+            warning_reason=warning_reason,
+            thread_id=thread.id
+        )
+        print(infraction)
+    except Exception as e:
+        try:
+            raise CustomError(f"Error in database interaction: {e}")
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    # Success Message
+    embed = discord.Embed(
+        title="✅ Successfully issued and logged infraction.",
+        color=constants.EMBED_COLOUR_OK
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
