@@ -207,3 +207,12 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         color=constants.EMBED_COLOUR_OK
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+def get_message_attachments(message: discord.Message):
+    attachments = message.attachments
+    attachment_urls = []
+    if attachments:
+        for attachment in attachments:
+            attachment_urls.append(attachment.url)
+
+    return attachment_urls

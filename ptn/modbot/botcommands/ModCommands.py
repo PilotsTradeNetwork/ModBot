@@ -14,12 +14,13 @@ from ptn.modbot._metadata import __version__
 
 # import bot
 from ptn.modbot.bot import bot
-from ptn.modbot.constants import role_council, role_mod
+from ptn.modbot.constants import role_council, role_mod, role_sommelier, bc_categories, channel_evidence
 from ptn.modbot.database.database import insert_infraction, find_infraction
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
-from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user
+from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
+    get_message_attachments
 
 """
 A primitive global error handler for text commands.
@@ -99,6 +100,8 @@ class InfractionReport(ui.Modal, title='Warn User'):
                         warning_moderator=self.warning_moderator, warning_reason=warning_reason,
                         warning_time=int(time.time()), rule_number=int(str(self.rule_number)))
 
+
+# Class for reporting of infraction messages
 class MessageInfractionReport(ui.Modal, title='Delete and create infraction from message'):
     def __init__(self, interaction: discord.Interaction, message: discord.Message, attachments: list):
         super().__init__()
@@ -125,8 +128,6 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
         warning_time = int(time.time())
         rule_broken = int(str(self.rule_number))
 
-
-
         warning_reason = "Infraction Message:\n"
 
         if self.warning_description:
@@ -139,10 +140,9 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
             warning_reason += f"\n Message Text: {self.message.content}"
 
         await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
-                        warning_reason=warning_reason,warning_time=warning_time,rule_number=rule_broken)
+                        warning_reason=warning_reason, warning_time=warning_time, rule_number=rule_broken)
 
         await self.message.delete()
-
 
 
 """
@@ -267,7 +267,8 @@ async def view_infractions(interaction: discord.Interaction, member: discord.Mem
 @commands.has_any_role(*constants.any_elevated_role)
 async def infraction_message(interaction: discord.Interaction, message: discord.Message):
     print(
-        f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in {message.channel.id}.")
+        f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in "
+        f"{message.channel.id}.")
 
     # Get the message attachments if they exist
     attachments = message.attachments
@@ -278,3 +279,58 @@ async def infraction_message(interaction: discord.Interaction, message: discord.
 
     await interaction.response.send_modal(MessageInfractionReport(interaction=interaction, message=message,
                                                                   attachments=attachments))
+
+
+@bot.tree.context_menu(name='Report to Mods')
+@commands.has_any_role(role_council(), role_mod(), role_sommelier())
+async def report_to_moderation(interaction: discord.Interaction, message: discord.Message):
+    reporting_user = interaction.user
+    reporting_user_roles = [role.id for role in reporting_user.roles]
+    mod_role = interaction.guild.get_role(role_mod())
+    evidence_channel = interaction.guild.get_channel(channel_evidence())
+
+    if not(role_council() in reporting_user_roles and role_mod() in reporting_user_roles):
+        if interaction.channel.category.id not in bc_categories():
+            try:
+                raise CustomError('You can only run this command in the Booze Cruise channels!')
+            except Exception as e:
+                return await on_generic_error(interaction=interaction, error=e)
+
+    attachment_urls = get_message_attachments(message=message)
+
+    reported_user = message.author
+    report_time = datetime.utcnow()
+    report_title = f'Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
+                   f'<#{interaction.channel.id}>.\n'
+
+    embed = discord.Embed(
+        description=report_title,
+        timestamp=report_time,
+        color=constants.EMBED_COLOUR_QU
+    )
+
+    report_message = ''
+
+    if message.content:
+        report_message += f"Message Text: {message.content}\n"
+
+    if attachment_urls:
+        for idx, url in enumerate(attachment_urls):
+            if idx == 0:
+                embed.set_image(url=url)
+            elif idx > 0:
+                report_message += f' Message Attachments: {url}\n'
+
+    embed.add_field(
+        name='Message Content',
+        value=report_message
+    )
+
+    response_embed = discord.Embed(
+        description='✅ Message sent to moderation.',
+        color=constants.EMBED_COLOUR_OK
+    )
+
+    await evidence_channel.send(embed=embed, content=f'{mod_role.mention}')
+    await message.delete()
+    await interaction.response.send_message(embed=response_embed, ephemeral=True)
