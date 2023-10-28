@@ -1,5 +1,6 @@
+import os
 from datetime import datetime
-
+import requests
 import discord
 
 from ptn.modbot import constants
@@ -131,26 +132,51 @@ async def get_rule(rule_number: int, interaction: discord.Interaction, member: d
     # get the rule embeds from the message
     rules_list = rules_message.embeds
 
+    # get the rule
+    try:
+        rule = rules_list[rule_number - 1]
+    except IndexError:
+        try:
+            raise CustomError(f'That is not a valid rule!')
+        except Exception as e:
+            return await on_generic_error(interaction=interaction, error=e)
+
     if member:
         try:
-            await interaction.channel.send(member.mention)
+            await interaction.channel.send(embed=rule, content=member.mention)
+
         except Exception as e:
             try:
                 raise CustomError(f"Could not mention member: {e}")
             except Exception as e:
                 return await on_generic_error(interaction, e)
-    await interaction.channel.send(embed=rules_list[rule_number - 1])
-    await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
+    else:
+        await interaction.channel.send(embed=rule)
+
+    confirmation_embed = discord.Embed(
+        description=f"✅ Sent rule in <#{interaction.channel}>",
+        color=constants.EMBED_COLOUR_OK
+    )
+    await interaction.response.send_message(embed=confirmation_embed, ephemeral=True)
+
+
+"""
+WARNING HELPER
+"""
 
 
 async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
-                    warning_reason: str, warning_time: int, rule_number: int):
+                    warning_reason: str, warning_time: int, rule_number: int, image: str = None, send_dm: bool = False):
+
+
+
+
     # find and count previous infractions
     infractions = await find_infraction(warned_user.id, 'warned_user')
     print(len(infractions))
     current_infraction_number = len(infractions) + 1
-    # handle thread (find if exists, create if not)
 
+    # handle thread (find if exists, create if not)
     try:
         thread = await find_thread(interaction=interaction, member=warned_user, guild=interaction.guild)
         print(thread)
@@ -179,10 +205,14 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             value=warning_reason,
             inline=True
         )
+        embed.set_image(url=image)
 
         await thread.send(embed=embed)
     except Exception as e:
-        raise CustomError(f"Error in thread handling: {e}")
+        try:
+            raise CustomError(f"Error in thread handling: {e}")
+        except Exception as e:
+            return await on_generic_error(interaction=interaction, error=e)
 
     # Insert infraction into database
     try:
@@ -201,12 +231,41 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         except Exception as e:
             return await on_generic_error(interaction, e)
 
+    # DM user
+    if send_dm:
+        warning_dm_message = 'Hello, this message is to inform you that you have received an infraction from the P.T.N ' \
+                             f'Mod team for being deemed in violation of Rule {rule_number}. For any questions about ' \
+                             'the nature of this infraction, please DM a Mod and we will answer them as best as we can.'
+
+        warning_dm_embed = discord.Embed(
+            title='Infraction Received',
+            description=warning_dm_message,
+            color=constants.EMBED_COLOUR_ERROR
+        )
+
+        try:
+            await warned_user.send(embed=warning_dm_embed)
+        except Exception as e:
+            try:
+                raise CustomError(f'Could not DM user: {e}')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
     # Success Message
     embed = discord.Embed(
         title="✅ Successfully issued and logged infraction.",
         color=constants.EMBED_COLOUR_OK
     )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    try:
+        await interaction.response.edit_message(embed=embed, view=None)
+    except:
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+"""
+GENERAL HELPERS
+"""
+
 
 def get_message_attachments(message: discord.Message):
     attachments = message.attachments
@@ -216,3 +275,13 @@ def get_message_attachments(message: discord.Message):
             attachment_urls.append(attachment.url)
 
     return attachment_urls
+
+
+def is_image_url(url):
+    # List of allowed image extensions
+    allowed_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+
+    # Extract the file extension from the URL
+    file_extension = os.path.splitext(url)[1].split('?')[0]  # Splits by '?' to handle query parameters
+
+    return file_extension in allowed_extensions
