@@ -324,6 +324,10 @@ class ModCommands(commands.Cog):
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
+    @app_commands.command(name='test_view')
+    async def test_view(self, interaction: discord.Interaction):
+        await interaction.response.send_message(view=WarningAndDMConfirmation())
+
 
 # An interaction to view a user's infractions
 @bot.tree.context_menu(name='View Infractions')
