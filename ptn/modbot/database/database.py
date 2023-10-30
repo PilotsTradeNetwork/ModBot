@@ -154,25 +154,44 @@ DATABASE EDIT FUNCTIONS
 
 
 # find an infraction in the db
-async def find_infraction(searchterm, searchcolumn):
-    print(f"Called find_infraction with {searchterm}, {searchcolumn}")
+async def find_infraction(searchterm1, searchcolumn1, searchterm2=None, searchcolumn2=None):
+    print(f"Called find_infraction with {searchterm1}, {searchcolumn1}, {searchterm2}, {searchcolumn2}")
     """
-    Finds all infractions from the specified column matching the given searchterm.
+    Finds all infractions that match given search terms in the specified columns.
 
-    :param searchterm: Search term to match
-    :param searchfield: DB column to match against
+    :param searchterm1: First search term to match
+    :param searchcolumn1: First DB column to match against
+    :param searchterm2: Second search term to match (optional)
+    :param searchcolumn2: Second DB column to match against (optional)
     :returns: A list of InfractionData objects
     :rtype: InfractionData
     """
-    if searchcolumn in [InfractionDbFields.entry_id.value, InfractionDbFields.warned_user.value,
-                        InfractionDbFields.warning_moderator.value]:
-        infraction_db.execute(
-            f"SELECT * FROM infractions WHERE {searchcolumn} = ?", (searchterm,)
-        )
+
+    # Building the SQL query and the tuple of parameters
+    sql = "SELECT * FROM infractions WHERE "
+    params = []
+
+    # Handling the first column and term
+    if searchcolumn1 in [InfractionDbFields.entry_id.value, InfractionDbFields.warned_user.value,
+                         InfractionDbFields.warning_moderator.value]:
+        sql += f"{searchcolumn1} = ?"
+        params.append(searchterm1)
     else:
-        infraction_db.execute(
-            f"SELECT * FROM infractions WHERE {searchcolumn} LIKE ?", (f'%{searchterm}%',)
-        )
+        sql += f"{searchcolumn1} LIKE ?"
+        params.append(f"%{searchterm1}%")
+
+    # Handling the second column and term (if provided)
+    if searchterm2 is not None and searchcolumn2 is not None:
+        if searchcolumn2 in [InfractionDbFields.entry_id.value, InfractionDbFields.warned_user.value,
+                             InfractionDbFields.warning_moderator.value]:
+            sql += f" AND {searchcolumn2} = ?"
+            params.append(searchterm2)
+        else:
+            sql += f" AND {searchcolumn2} LIKE ?"
+            params.append(f"%{searchterm2}%")
+
+    # Executing the SQL statement
+    infraction_db.execute(sql, tuple(params))
 
     infraction_data = [InfractionData(infraction) for infraction in infraction_db.fetchall()]
     for infraction in infraction_data:
@@ -187,7 +206,6 @@ async def delete_single_warning(entry_id):
     Function to lookup a warning by its Primary Key and delete it.
     """
     print(f"Attempting to delete entry {entry_id}.")
-    warning = find_infraction(entry_id, InfractionDbFields.entry_id.value)
     try:
         await infraction_db_lock.acquire()
         infraction_db.execute(f"DELETE FROM infractions WHERE entry_id = {entry_id}")
@@ -212,8 +230,10 @@ async def delete_all_warnings_for_user(warned_user):
         infraction_db_lock.release()
     return
 
+
 # Insert an infraction into the database
-async def insert_infraction(warned_user, warning_moderator, warning_time, rule_broken=None, warning_reason=None, thread_id=None):
+async def insert_infraction(warned_user, warning_moderator, warning_time, rule_broken=None, warning_reason=None,
+                            thread_id=None):
     """
     Inserts a new infraction into the infractions table.
 
@@ -233,7 +253,8 @@ async def insert_infraction(warned_user, warning_moderator, warning_time, rule_b
         await infraction_db_lock.acquire()
 
         infraction_db.execute(
-            f"INSERT INTO infractions (warned_user, warning_moderator, warning_time, rule_broken, warning_reason, thread_id) VALUES (?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO infractions (warned_user, warning_moderator, warning_time, rule_broken, warning_reason, "
+            f"thread_id) VALUES (?, ?, ?, ?, ?, ?)",
             (warned_user, warning_moderator, warning_time, rule_broken, warning_reason, thread_id)
         )
         infraction_conn.commit()
@@ -245,4 +266,3 @@ async def insert_infraction(warned_user, warning_moderator, warning_time, rule_b
 
     print(f"Infraction inserted with entry ID {entry_id}.")
     return entry_id
-

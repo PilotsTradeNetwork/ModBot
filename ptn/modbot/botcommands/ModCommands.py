@@ -1,4 +1,5 @@
 # discord.py
+import re
 import time
 from datetime import datetime
 
@@ -14,8 +15,9 @@ from ptn.modbot._metadata import __version__
 
 # import bot
 from ptn.modbot.bot import bot
-from ptn.modbot.constants import role_council, role_mod, role_sommelier, bc_categories, channel_evidence
-from ptn.modbot.database.database import insert_infraction, find_infraction
+from ptn.modbot.constants import role_council, role_mod, role_sommelier, bc_categories, channel_evidence, \
+    channel_botspam
+from ptn.modbot.database.database import insert_infraction, find_infraction, delete_single_warning
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
@@ -61,6 +63,7 @@ MODALS FOR WARNS
 '''
 
 
+# From /warn
 class InfractionReport(ui.Modal, title='Warn User'):
 
     # pass variables into the modal for throughput
@@ -96,17 +99,63 @@ class InfractionReport(ui.Modal, title='Warn User'):
         #     ephemeral=True
         # )
         warning_reason = str(self.warning_reason)
+        try:
+            warning_data = {
+                'warned_user': self.warned_user,
+                'interaction': interaction,
+                'warning_moderator': self.warning_moderator,
+                'warning_reason': warning_reason,
+                'warning_time': int(time.time()),
+                'rule_number': int(str(self.rule_number))
+            }
+            await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
+                                                    ephemeral=True)
+            # await warn_user(**warning_data)
 
-        warning_data = {
-            'warned_user': self.warned_user,
-            'interaction': interaction,
-            'warning_moderator': self.warning_moderator,
-            'warning_reason': warning_reason,
-            'warning_time': int(time.time()),
-            'rule_number': int(str(self.rule_number))
-        }
-        await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data), ephemeral=True)
-        # await warn_user(**warning_data)
+        except Exception as e:
+            try:
+                raise CustomError(f'Could not warn member! `{e}`')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
+
+# Class for confirming warning deletion
+class DeletionConfirmation(discord.ui.View):
+    def __init__(self, infraction_entry: int, message: discord.Message, original_interaction: discord.Interaction):
+        super().__init__(timeout=None)
+        self.infraction_entry = infraction_entry
+        self.message = message
+        self.original_interaction = original_interaction
+
+    @discord.ui.button(label='Delete', style=discord.ButtonStyle.green, emoji='⚠️', custom_id='delete', row=0)
+    async def delete_infraction_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        botspam = interaction.guild.get_channel(channel_botspam())
+        await self.message.delete()
+        await delete_single_warning(self.infraction_entry)
+
+        original_response = await self.original_interaction.original_response()
+
+        embed_confirmation = discord.Embed(
+            description='✅ Infraction Deleted',
+            color=constants.EMBED_COLOUR_OK
+        )
+        await original_response.delete()
+        await interaction.response.send_message(ephemeral=True, embed=embed_confirmation)
+        spam_embed = discord.Embed(
+            description=f'<@{interaction.user.id}> deleted an infraction',
+            color=constants.EMBED_COLOUR_QU
+        )
+        await botspam.send(embed=spam_embed)
+
+    @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='❌', custom_id='cancel', row=0)
+    async def cancel_deletion(self, interaction: discord.Interaction):
+        original_respone = await self.original_interaction.original_response()
+
+        embed_confirmation = discord.Embed(
+            description='❌ Canceled',
+            color=constants.EMBED_COLOUR_ERROR
+        )
+        await original_respone.edit(embeds=[embed_confirmation], view=None)
 
 
 # Class for confirming warning and asking for DM or not
@@ -146,12 +195,12 @@ class WarningAndDMConfirmation(discord.ui.View):
                             warning_reason=self.warning_data.get('warning_reason'),
                             rule_number=self.warning_data.get('rule_number'),
                             send_dm=self.send_dm,
-                            image=self.warning_data.get('image'))
+                            image=self.warning_data.get('image'), original_interaction=interaction)
         except Exception as e:
             return await on_generic_error(interaction, e)
 
 
-# Class for reporting of infraction messages
+# From Delete & Warn
 class MessageInfractionReport(ui.Modal, title='Delete and create infraction from message'):
     def __init__(self, interaction: discord.Interaction, message: discord.Message, attachments: list, stickers: list):
         super().__init__()
@@ -174,60 +223,65 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        warned_user = self.message.author
-        warning_moderator = interaction.user
-        warning_time = int(time.time())
-        rule_broken = int(str(self.rule_number))
-        image = None
+        try:
+            warned_user = self.message.author
+            warning_moderator = interaction.user
+            warning_time = int(time.time())
+            rule_broken = int(str(self.rule_number))
+            image = None
 
-        warning_reason = "**Infraction Message:**\n"
+            warning_reason = "**Infraction Message:**\n"
 
-        if self.warning_description:
-            warning_reason += f"**Context:** {self.warning_description}\n"
+            if self.warning_description:
+                warning_reason += f"**Context:** {self.warning_description}\n"
 
-        if self.stickers:
-            warning_reason += f'**Message Stickers:** \n'
-            for sticker in self.stickers:
-                warning_reason += f'{sticker.url}\n'
+            if self.stickers:
+                warning_reason += f'**Message Stickers:** \n'
+                for sticker in self.stickers:
+                    warning_reason += f'{sticker.url}\n'
 
-        if self.attachments:
-            picture_loaded = False
-            non_image_attachments = []
+            if self.attachments:
+                picture_loaded = False
+                non_image_attachments = []
 
-            for url in self.attachments:
-                if not picture_loaded and is_image_url(url):
-                    image = url
-                    picture_loaded = True
-                    warning_reason += f'**Image Link:** {url}\n'
-                else:
-                    non_image_attachments.append(url)
+                for url in self.attachments:
+                    if not picture_loaded and is_image_url(url):
+                        image = url
+                        picture_loaded = True
+                        warning_reason += f'**Image Link:** {url}\n'
+                    else:
+                        non_image_attachments.append(url)
 
-            if non_image_attachments:
-                warning_reason += '**Message Attachments:**\n'
-                for idx, att in enumerate(non_image_attachments, start=1):
-                    warning_reason += f"{idx}. {att}\n"
+                if non_image_attachments:
+                    warning_reason += '**Message Attachments:**\n'
+                    for idx, att in enumerate(non_image_attachments, start=1):
+                        warning_reason += f"{idx}. {att}\n"
 
-        if self.message.content:
-            warning_reason += f"**Message Text:** {self.message.content}"
+            if self.message.content:
+                warning_reason += f"**Message Text:** {self.message.content}"
 
-        # await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
-        #                 warning_reason=warning_reason, warning_time=warning_time, rule_number=rule_broken, image=image)
+            # await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
+            # warning_reason=warning_reason, warning_time=warning_time, rule_number=rule_broken, image=image)
 
-        warning_data = {
-            'warned_user': warned_user,
-            'interaction': interaction,
-            'warning_moderator': warning_moderator,
-            'warning_reason': warning_reason,
-            'warning_time': int(time.time()),
-            'rule_number': rule_broken,
-            'image': image
-        }
+                warning_data = {
+                    'warned_user': warned_user,
+                    'interaction': interaction,
+                    'warning_moderator': warning_moderator,
+                    'warning_reason': warning_reason,
+                    'warning_time': int(time.time()),
+                    'rule_number': rule_broken,
+                    'image': image
+                }
 
-        await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
-                                                ephemeral=True)
+                await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
+                                                        ephemeral=True)
 
-
-        await self.message.delete()
+                await self.message.delete()
+        except Exception as e:
+            try:
+                raise CustomError(f'Could not delete and warn member! `{e}`')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
 
 
 """
@@ -280,8 +334,14 @@ class ModCommands(commands.Cog):
     @app_commands.command(name='rule', description='Prints a rule buy its number, with option to mention a member')
     @commands.has_any_role(*constants.any_elevated_role)
     @describe(rule_number='Number of the rule you wish to print')
-    @describe(member='[Optional] Mention a user based off user id')
+    @describe(member='[Optional] Mention a user')
     async def rule(self, interaction: discord.Interaction, rule_number: int, member: discord.Member = None):
+        if member.bot:
+            try:
+                raise CustomError('Bots are too cool for rules 💀')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
         await get_rule(interaction=interaction, rule_number=rule_number, member=member)
 
     # relies on getting member infractions
@@ -290,6 +350,17 @@ class ModCommands(commands.Cog):
     @describe(member='The member to be warned')
     async def warn(self, interaction: discord.Interaction, member: discord.Member):
         print(f"warn called by {interaction.user.display_name}")
+
+        if member.bot:
+            if member == bot.user:
+                embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
+                embed.set_image(url=constants.the_bird)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            try:
+                raise CustomError('You cannot warn bots.')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
 
         warned_user = member
         warning_moderator = interaction.user
@@ -302,31 +373,36 @@ class ModCommands(commands.Cog):
     # command to find a user's infraction thread, if exists
     @app_commands.command(name='find_thread', description='finds a thread given a user\'s id')
     @commands.has_any_role(*constants.any_elevated_role)
-    @describe(id='id of the member')
-    async def find_thread(self, interaction: discord.Interaction, id: str):
+    async def find_thread(self, interaction: discord.Interaction, member: discord.Member):
         # check if user is in guild
         guild = interaction.guild
-        try:
-            member_object = interaction.guild.get_member(int(id))
-        except Exception as e:
+
+        # Check if member is bot
+        if member.bot:
+            if member == bot.user:
+                embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
+                embed.set_image(url=constants.the_bird)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
             try:
-                raise CustomError(f"ID input must be an number! \n`{e}`")
+                raise CustomError('Bots do not have threads.')
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
         # find and send thread id
-        thread = await find_thread(member=member_object, guild=guild, interaction=interaction)
+        thread = await find_thread(member=member, guild=guild, interaction=interaction)
         if thread:
             await interaction.response.send_message(f"<#{thread.id}>", ephemeral=True)
         else:
             try:
-                raise CustomError("That thread doesn't exist!")
+                raise CustomError("Member does not have a thread.")
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
-    @app_commands.command(name='test_view')
-    async def test_view(self, interaction: discord.Interaction):
-        await interaction.response.send_message(view=WarningAndDMConfirmation())
+
+"""
+CONTEXT MENU COMMANDS
+"""
 
 
 # An interaction to view a user's infractions
@@ -336,6 +412,16 @@ async def view_infractions(interaction: discord.Interaction, member: discord.Mem
     print(f"view_infractions called by {interaction.user.display_name} for {member.display_name}")
     guild = interaction.guild
     spamchannel = bot.get_channel(constants.channel_botspam())
+    if member.bot:
+        if member == bot.user:
+            embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
+            embed.set_image(url=constants.the_bird)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        try:
+            raise CustomError('Bots do not have infractions.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
 
     await display_infractions(interaction=interaction, member=member, guild=guild)
 
@@ -347,6 +433,17 @@ async def infraction_message(interaction: discord.Interaction, message: discord.
     print(
         f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in "
         f"{message.channel.id}.")
+
+    if message.author.bot:
+        if message.author == bot.user:
+            embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
+            embed.set_image(url=constants.the_bird)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        try:
+            raise CustomError('You cannot report bot messages.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
 
     # Get the message attachments if they exist
     attachments = get_message_attachments(message)
@@ -364,6 +461,17 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
     mod_role = interaction.guild.get_role(role_mod())
     evidence_channel = interaction.guild.get_channel(channel_evidence())
 
+    if message.author.bot:
+        if message.author == bot.user:
+            embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
+            embed.set_image(url=constants.the_bird)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        try:
+            raise CustomError('You cannot report bot messages.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
     if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
         if interaction.channel.category.id not in bc_categories():
             try:
@@ -374,7 +482,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
     attachment_urls = get_message_attachments(message=message)
 
     reported_user = message.author
-    report_time = datetime.utcnow()
+    report_time = datetime.now()
     report_title = f'Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
                    f'<#{interaction.channel.id}>.\n'
 
@@ -400,6 +508,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
             if not picture_loaded and is_image_url(url):
                 embed.set_image(url=url)
                 picture_loaded = True
+                report_message += f'**Image Link:** {url}\n'
             else:
                 report_message += f' Message Attachments: {url}\n'
 
@@ -416,3 +525,113 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
     await evidence_channel.send(embed=embed, content=f'{mod_role.mention}')
     await message.delete()
     await interaction.response.send_message(embed=response_embed, ephemeral=True)
+
+
+@bot.tree.context_menu(name='Remove Infraction')
+@commands.has_any_role(*constants.any_elevated_role)
+async def remove_infraction(interaction: discord.Interaction, message: discord.Message):
+    channel = interaction.channel
+    try:
+        if channel.parent.id == channel_evidence() and isinstance(channel, discord.Thread):
+            infraction_embed = message.embeds[0]
+            infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
+            infraction_entry = int(infraction_embed.fields[4].value)
+            # await interaction.response.send_message(f'TEST:\nREASON: {infraction_reason}\nUSER: {infraction_user}')
+
+            embed = discord.Embed(
+                description='Confirm Delete this Infraction?',
+                color=constants.EMBED_COLOUR_QU
+            )
+
+            infraction = await find_infraction(int(infraction_user), 'warned_user', infraction_entry, 'entry_id')
+            if infraction:
+                await interaction.response.send_message(
+                    view=DeletionConfirmation(infraction_entry, message, interaction),
+                    embeds=[embed, infraction_embed], ephemeral=True)
+    except AttributeError:
+        try:
+            raise CustomError(f'Must be in a thread in <#{channel_evidence()}>.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+
+@bot.tree.context_menu(name='Warning from Report')
+@commands.has_any_role(*constants.any_elevated_role)
+async def report_to_warn(interaction: discord.Interaction, message: discord.Message):
+    channel = interaction.channel
+    print(channel.id == channel_evidence())
+
+    # Check if in evidence channel
+    if not (channel.id == channel_evidence()):
+        try:
+            raise CustomError(f'Must be in <#{channel_evidence()}>.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    # Check if message is from the bot
+    if not (message.author == bot.user):
+        try:
+            raise CustomError(f'Message must be from <@{bot.user.id}>')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    try:
+        embed = message.embeds[0]
+    except IndexError:
+        try:
+            raise CustomError('Must be run on reports only!')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    content_field = embed.fields[0].value
+    report_info = embed.description
+    image = None
+    if embed.image:
+        image = embed.image.url
+    # print(report_info)
+
+    numbers = re.findall(r'<[@#](\d+)>', report_info)
+    reporter_id, reported_user_id, channel_id = numbers
+
+    # get reported user
+    reported_user = interaction.guild.get_member(int(reported_user_id))
+    reporter_user = interaction.guild.get_member(int(reporter_id))
+    content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
+
+    # print(reported_user_id)
+    # print('TESTOMG:' + str(reported_user))
+
+    # Modal for rule number reporting
+    class RuleModal(discord.ui.Modal):
+        def __init__(self):
+            super().__init__(timeout=None, title='Report rule number broken')
+
+        rule_number = ui.TextInput(
+            label='Rule Broken',
+            placeholder='Number (i.e. \'1\') of the rule broken...',
+            required=True
+        )
+
+        async def on_submit(self, interaction: discord.Interaction):
+            warning_reason = content_field + ''
+            try:
+                warning_data = {
+                    'warned_user': reported_user,
+                    'interaction': interaction,
+                    'warning_moderator': interaction.user,
+                    'warning_reason': warning_reason,
+                    'warning_time': int(time.time()),
+                    'rule_number': int(str(self.rule_number)),
+                    'image': image
+                }
+
+                await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
+                                                     ephemeral=True)
+            except Exception as e:
+                try:
+                    raise CustomError(f'Could not warn from report! `{e}`')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+    await interaction.response.send_modal(RuleModal())
+    # await interaction.response.send_message(f'TEST:\nCONTENT:{content_field}\nREPORT INFO:{report_info}')
