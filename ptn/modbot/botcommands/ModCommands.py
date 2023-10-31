@@ -22,7 +22,7 @@ from ptn.modbot.database.database import insert_infraction, find_infraction, del
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
-    get_message_attachments, is_image_url
+    get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel
 
 """
 A primitive global error handler for text commands.
@@ -99,6 +99,8 @@ class InfractionReport(ui.Modal, title='Warn User'):
         #     ephemeral=True
         # )
         warning_reason = str(self.warning_reason)
+        if not await rule_check(rule_number=int(str(self.rule_number)), interaction=interaction):
+            return
         try:
             warning_data = {
                 'warned_user': self.warned_user,
@@ -135,17 +137,21 @@ class DeletionConfirmation(discord.ui.View):
 
         original_response = await self.original_interaction.original_response()
 
+        spam_embed = discord.Embed(
+            description=f'<@{interaction.user.id}> deleted an infraction',
+            color=constants.EMBED_COLOUR_QU
+        )
+        await botspam.send(embed=spam_embed)
+
+        # Call our helper function to check and delete the thread if necessary
+        await delete_thread_if_only_bot_message(self.message)
+
         embed_confirmation = discord.Embed(
             description='✅ Infraction Deleted',
             color=constants.EMBED_COLOUR_OK
         )
         await original_response.delete()
         await interaction.response.send_message(ephemeral=True, embed=embed_confirmation)
-        spam_embed = discord.Embed(
-            description=f'<@{interaction.user.id}> deleted an infraction',
-            color=constants.EMBED_COLOUR_QU
-        )
-        await botspam.send(embed=spam_embed)
 
     @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='❌', custom_id='cancel', row=0)
     async def cancel_deletion(self, interaction: discord.Interaction):
@@ -230,6 +236,9 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
             rule_broken = int(str(self.rule_number))
             image = None
 
+            if not await rule_check(rule_number=int(str(self.rule_number)), interaction=interaction):
+                return
+
             warning_reason = "**Infraction Message:**\n"
 
             if self.warning_description:
@@ -239,10 +248,12 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                 warning_reason += f'**Message Stickers:** \n'
                 for sticker in self.stickers:
                     warning_reason += f'{sticker.url}\n'
+                print('Stickers in Message')
 
             if self.attachments:
                 picture_loaded = False
                 non_image_attachments = []
+                print('Attachments in Message')
 
                 for url in self.attachments:
                     if not picture_loaded and is_image_url(url):
@@ -255,7 +266,7 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                 if non_image_attachments:
                     warning_reason += '**Message Attachments:**\n'
                     for idx, att in enumerate(non_image_attachments, start=1):
-                        warning_reason += f"{idx}. {att}\n"
+                        warning_reason += f"{idx}. [Attachment]({att})\n"
 
             if self.message.content:
                 warning_reason += f"**Message Text:** {self.message.content}"
@@ -263,20 +274,19 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
             # await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
             # warning_reason=warning_reason, warning_time=warning_time, rule_number=rule_broken, image=image)
 
-                warning_data = {
-                    'warned_user': warned_user,
-                    'interaction': interaction,
-                    'warning_moderator': warning_moderator,
-                    'warning_reason': warning_reason,
-                    'warning_time': int(time.time()),
-                    'rule_number': rule_broken,
-                    'image': image
-                }
-
-                await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
-                                                        ephemeral=True)
-
-                await self.message.delete()
+            warning_data = {
+                'warned_user': warned_user,
+                'interaction': interaction,
+                'warning_moderator': warning_moderator,
+                'warning_reason': warning_reason,
+                'warning_time': int(time.time()),
+                'rule_number': rule_broken,
+                'image': image
+            }
+            print('Sending Warning Confirmation')
+            await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
+                                                    ephemeral=True)
+            await self.message.delete()
         except Exception as e:
             try:
                 raise CustomError(f'Could not delete and warn member! `{e}`')
@@ -305,7 +315,7 @@ class ModCommands(commands.Cog):
     # ping command to check if the bot is responding
     @commands.command(name='ping', aliases=['hello', 'ehlo', 'helo'],
                       help='Use to check if modbot is online and responding.')
-    @commands.has_any_role(*constants.any_elevated_role)
+    @check_roles(constants.any_elevated_role)
     async def ping(self, ctx):
         print(f"{ctx.author} used PING in {ctx.channel.name}")
         embed = discord.Embed(
@@ -317,7 +327,7 @@ class ModCommands(commands.Cog):
 
     # command to sync interactions - must be done whenever the bot has appcommands added/removed
     @commands.command(name='sync', help='Synchronise modbot interactions with server')
-    @commands.has_any_role(*constants.any_elevated_role)
+    @check_roles(constants.any_elevated_role)
     async def sync(self, ctx):
         print(f"Interaction sync called from {ctx.author.display_name}")
         async with ctx.typing():
@@ -332,21 +342,22 @@ class ModCommands(commands.Cog):
 
     # command to display a rule with an option to ping a member
     @app_commands.command(name='rule', description='Prints a rule buy its number, with option to mention a member')
-    @commands.has_any_role(*constants.any_elevated_role)
+    @check_roles(constants.any_elevated_role)
     @describe(rule_number='Number of the rule you wish to print')
     @describe(member='[Optional] Mention a user')
     async def rule(self, interaction: discord.Interaction, rule_number: int, member: discord.Member = None):
-        if member.bot:
-            try:
-                raise CustomError('Bots are too cool for rules 💀')
-            except Exception as e:
-                return await on_generic_error(interaction, e)
+        if member:
+            if member.bot:
+                try:
+                    raise CustomError('Bots are too cool for rules 💀')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
 
         await get_rule(interaction=interaction, rule_number=rule_number, member=member)
 
     # relies on getting member infractions
     @app_commands.command(name='warn', description='Warn a user')
-    @commands.has_any_role(*constants.any_elevated_role)
+    @check_roles(constants.any_elevated_role)
     @describe(member='The member to be warned')
     async def warn(self, interaction: discord.Interaction, member: discord.Member):
         print(f"warn called by {interaction.user.display_name}")
@@ -372,7 +383,7 @@ class ModCommands(commands.Cog):
 
     # command to find a user's infraction thread, if exists
     @app_commands.command(name='find_thread', description='finds a thread given a user\'s id')
-    @commands.has_any_role(*constants.any_elevated_role)
+    @check_roles(constants.any_elevated_role)
     async def find_thread(self, interaction: discord.Interaction, member: discord.Member):
         # check if user is in guild
         guild = interaction.guild
@@ -399,6 +410,143 @@ class ModCommands(commands.Cog):
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
+    @app_commands.command(name='help', description='Displays a list of available commands.')
+    @can_see_channel(constants.privlidged_channel())
+    async def help_command(self, interaction: discord.Interaction):
+        # Create a new embed message for the help command
+        embed = discord.Embed(
+            title="🔧 MOD BOT COMMANDS",
+            color=constants.EMBED_COLOUR_OK
+        )
+        if check_roles(constants.any_elevated_role):
+            # Traditional commands
+            embed.add_field(name="ping", value="Use to check if modbot is online and responding. [Slash Command]",
+                            inline=False)
+            embed.add_field(name="sync", value="Synchronise modbot interactions with server [Slash Command]",
+                            inline=False)
+
+            # Slash commands
+            embed.add_field(name="rule", value="Prints a rule buy its number, with option to mention a member "
+                                               "[Slash Command]",
+                            inline=False)
+            embed.add_field(name="warn", value="Warn a user [Slash Command]", inline=False)
+            embed.add_field(name="find_thread", value="Finds a thread given a member [Slash Command]", inline=False)
+
+            # Context Menu Commands (based on their name attributes)
+            embed.add_field(name="View Infractions", value="View a member infractions [Right-click on member]",
+                            inline=False)
+            embed.add_field(name="Delete & Warn",
+                            value="Delete a violating message and send it to the infractions thread "
+                                  "[Right-click on message]",
+                            inline=False)
+            embed.add_field(name="Remove Infraction", value="Remove an infraction [Right-click on message in thread]",
+                            inline=False)
+            embed.add_field(name="Warning from Report",
+                            value=f"Give a warning based on a report [Right-click on message "
+                                  f"in <#{channel_evidence()}>]", inline=False)
+        embed.add_field(name="Report to Mods", value="Report a message to mods [Right-click on message]", inline=False)
+
+        # Send the embed to the user
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name='sync_infractions')
+    @check_roles(constants.any_elevated_role)
+    async def sync_infractions(self, interaction: discord.Interaction, member: discord.Member):
+        print(f'{interaction.user.display_name} called sync_infractions')
+        guild = interaction.guild
+        thread = await find_thread(interaction, member, guild)
+        response_embed = discord.Embed(description=f'Syncing Infractions for <@{member.id}>...')
+        await interaction.response.send_message(embed=response_embed, ephemeral=True)
+
+        if not thread:
+            thread = create_thread(member, guild)
+
+        # Helper function to extract the numeric ID from strings like <@196749279807668225>
+        def extract_id(value: str) -> int:
+            match = re.search(r'(\d+)', value)
+            if match:
+                return int(match.group(1))
+            return 0  # return a default value if no match
+
+        def extract_infraction_from_embed(embed: discord.Embed) -> dict:
+            return {
+                'warned_user': extract_id(embed.fields[0].value),
+                'warning_moderator': extract_id(embed.fields[1].value),
+                'warning_time': embed.timestamp.timestamp(),  # convert to UNIX timestamp
+                'warning_reason': embed.fields[2].value,
+                'rule_broken': embed.fields[3].value,
+                'entry_id': embed.fields[4].value,
+                'thread_id': thread.id
+            }
+
+        thread_infractions = []
+        async for message in thread.history():
+            for embed in message.embeds:
+                infraction = extract_infraction_from_embed(embed)
+                thread_infractions.append(infraction)
+
+        db_infractions = await find_infraction('warned_user', member.id)
+
+        db_ids = {infraction['entry_id'] for infraction in db_infractions}
+        thread_ids = {infraction['entry_id'] for infraction in thread_infractions}
+        missing_in_thread = db_ids - thread_ids
+
+        if missing_in_thread:
+            response_embed = discord.Embed(description=f'Infractions missing in thread, Syncing...')
+            await interaction.response.edit_message(embed=response_embed, ephemeral=True)
+            await thread.purge()
+            for itx, infraction in enumerate(db_infractions):
+                # post infraction to thread
+                embed = discord.Embed(
+                    title=f"Infraction #{itx}",
+                    timestamp=datetime.fromtimestamp(infraction.warning_time)
+                )
+                embed.add_field(
+                    name="User",
+                    value=f"<@{infraction.warned_user}>",
+                    inline=True
+                )
+                embed.add_field(
+                    name="Moderator",
+                    value=f"<@{infraction.warning_moderator}>",
+                    inline=True
+                )
+                embed.add_field(
+                    name="Reason",
+                    value=infraction.warning_reason,
+                    inline=True
+                )
+                embed.add_field(
+                    name='Rule Broken',
+                    value=infraction.rule_broken,
+                    inline=True
+                )
+                embed.add_field(
+                    name='Database Entry',
+                    value=infraction.entry_id,
+                    inline=True
+                )
+                embed.set_footer(text='Synced from database')
+                await thread.send(embed=embed)
+
+        # Infractions in thread but not in database
+        missing_in_db = thread_ids - db_ids
+        for infraction in thread_infractions:
+            if infraction['entry_id'] in missing_in_db:
+                await insert_infraction(
+                    warned_user=int(infraction['warned_user']),
+                    warning_moderator=int(infraction['warning_moderator']),
+                    warning_time=int(infraction['warning_time']),
+                    rule_broken=int(infraction['rule_broken']) if infraction['rule_broken'] else None,
+                    warning_reason=infraction['warning_reason'],
+                    thread_id=int(infraction['thread_id'])
+                )
+
+        await interaction.delete_original_response()
+        await interaction.followup.send(embed=discord.Embed(description=f'✅ Infractions Synced',
+                                                            color=constants.EMBED_COLOUR_OK), ephemeral=True)
+
+
 
 """
 CONTEXT MENU COMMANDS
@@ -407,7 +555,7 @@ CONTEXT MENU COMMANDS
 
 # An interaction to view a user's infractions
 @bot.tree.context_menu(name='View Infractions')
-@commands.has_any_role(*constants.any_elevated_role)
+@check_roles(constants.any_elevated_role)
 async def view_infractions(interaction: discord.Interaction, member: discord.Member):
     print(f"view_infractions called by {interaction.user.display_name} for {member.display_name}")
     guild = interaction.guild
@@ -428,7 +576,7 @@ async def view_infractions(interaction: discord.Interaction, member: discord.Mem
 
 # An interaction to delete a violating message and send it to the infractions thread, with option to DM the user
 @bot.tree.context_menu(name='Delete & Warn')
-@commands.has_any_role(*constants.any_elevated_role)
+@check_roles(constants.any_elevated_role)
 async def infraction_message(interaction: discord.Interaction, message: discord.Message):
     print(
         f"infraction_message by {interaction.user.display_name} for user {message.author.display_name}'s message in "
@@ -454,7 +602,7 @@ async def infraction_message(interaction: discord.Interaction, message: discord.
 
 
 @bot.tree.context_menu(name='Report to Mods')
-@commands.has_any_role(role_council(), role_mod(), role_sommelier())
+@can_see_channel(constants.privlidged_channel())
 async def report_to_moderation(interaction: discord.Interaction, message: discord.Message):
     reporting_user = interaction.user
     reporting_user_roles = [role.id for role in reporting_user.roles]
@@ -472,12 +620,13 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         except Exception as e:
             return await on_generic_error(interaction, e)
 
-    if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
-        if interaction.channel.category.id not in bc_categories():
-            try:
-                raise CustomError('You can only run this command in the Booze Cruise channels!')
-            except Exception as e:
-                return await on_generic_error(interaction=interaction, error=e)
+    '''Somm check - Unimplemented'''
+    # if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
+    #     if interaction.channel.category.id not in bc_categories():
+    #         try:
+    #             raise CustomError('You can only run this command in the Booze Cruise channels!')
+    #         except Exception as e:
+    #             return await on_generic_error(interaction=interaction, error=e)
 
     attachment_urls = get_message_attachments(message=message)
 
@@ -492,25 +641,33 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         color=constants.EMBED_COLOUR_QU
     )
 
-    report_message = ''
+    report_message = f'Message Link: {message.jump_url}\n\n'
 
     if message.content:
         report_message += f"Message Text: {message.clean_content}\n"
 
     if message.stickers:
-        report_message += f'Message Stickers: \n'
-        for sticker in message.stickers:
-            report_message += f'{sticker.url}\n'
+        report_message += f'\nMessage Stickers: \n'
+        for idx, sticker in enumerate(message.stickers):
+            report_message += f'{idx}. [Sticker URL]({sticker.url})\n'
 
     if attachment_urls:
         picture_loaded = False
-        for idx, url in enumerate(attachment_urls):
+        non_image_attachments = []
+        print('Attachments in Message')
+
+        for url in attachment_urls:
             if not picture_loaded and is_image_url(url):
                 embed.set_image(url=url)
                 picture_loaded = True
-                report_message += f'**Image Link:** {url}\n'
+                report_message += f'\n**Image Link:** [Image Link]({url})\n'
             else:
-                report_message += f' Message Attachments: {url}\n'
+                non_image_attachments.append(url)
+
+        if non_image_attachments:
+            report_message += '\n**Message Attachments:**\n'
+            for idx, att in enumerate(non_image_attachments, start=1):
+                report_message += f"{idx}. [Attachment]({att})\n"
 
     embed.add_field(
         name='Message Content',
@@ -523,12 +680,17 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
     )
 
     await evidence_channel.send(embed=embed, content=f'{mod_role.mention}')
-    await message.delete()
+
+    '''Message deletion - Unimplemented'''
+    # if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
+    #     if interaction.channel.category.id in bc_categories():
+    #         await message.delete()
+
     await interaction.response.send_message(embed=response_embed, ephemeral=True)
 
 
 @bot.tree.context_menu(name='Remove Infraction')
-@commands.has_any_role(*constants.any_elevated_role)
+@check_roles(constants.any_elevated_role)
 async def remove_infraction(interaction: discord.Interaction, message: discord.Message):
     channel = interaction.channel
     try:
@@ -556,7 +718,7 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
 
 
 @bot.tree.context_menu(name='Warning from Report')
-@commands.has_any_role(*constants.any_elevated_role)
+@check_roles(constants.any_elevated_role)
 async def report_to_warn(interaction: discord.Interaction, message: discord.Message):
     channel = interaction.channel
     print(channel.id == channel_evidence())
@@ -626,7 +788,8 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                 }
 
                 await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
-                                                     ephemeral=True)
+                                                        ephemeral=True)
+                await message.delete()
             except Exception as e:
                 try:
                     raise CustomError(f'Could not warn from report! `{e}`')

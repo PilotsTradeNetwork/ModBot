@@ -2,12 +2,14 @@ import os
 from datetime import datetime
 import requests
 import discord
+from discord import app_commands
+from discord.app_commands import commands
 
 from ptn.modbot import constants
 from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam
 from ptn.modbot.bot import bot
 from ptn.modbot.database.database import find_infraction, insert_infraction
-from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error
+from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error, CommandRoleError
 
 """
 THREAD HELPERS
@@ -29,7 +31,7 @@ def create_thread(member: discord.Member, guild: discord.Guild):
 
         # create thread
         thread_name = f'{member_name} | {member_id}'
-        return infractions_channel.create_thread(name=thread_name)
+        return infractions_channel.create_thread(name=thread_name, type=discord.ChannelType.public_thread)
     except Exception as e:
         raise CustomError(f"Error in thread creation: {e}")
 
@@ -114,6 +116,34 @@ RULE HELPERS
 
 Used for getting and displaying rules
 """
+
+
+async def rule_check(rule_number: int, interaction: discord.Interaction):
+    if rule_number <= 0:
+        try:
+            raise CustomError('Rule must be a positive value!')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    guild = interaction.channel.guild
+
+    # get rule channel from guild
+    rules_channel_object = guild.get_channel(channel_rules())
+
+    # fetch rules message from rules channel
+    rules_message = await rules_channel_object.fetch_message(constants.rules_message())
+
+    # get the rule embeds from the message
+    rules_list = rules_message.embeds
+
+    # get the rule
+    try:
+        return bool(rules_list[rule_number - 1])
+    except IndexError:
+        try:
+            raise CustomError(f'That is not a valid rule!')
+        except Exception as e:
+            return await on_generic_error(interaction=interaction, error=e)
 
 
 async def get_rule(rule_number: int, interaction: discord.Interaction, member: discord.Member = None):
@@ -303,3 +333,73 @@ def is_image_url(url):
     file_extension = os.path.splitext(url)[1].split('?')[0]  # Splits by '?' to handle query parameters
 
     return file_extension in allowed_extensions
+
+
+def get_role(ctx, id):  # takes a Discord role ID and returns the role object
+    role = discord.utils.get(ctx.guild.roles, id=id)
+    return role
+
+
+async def checkroles_actual(interaction: discord.Interaction, permitted_role_ids):
+    try:
+        """
+        Check if the user has at least one of the permitted roles to run a command
+        """
+        print(f"checkroles called.")
+        author_roles = interaction.user.roles
+        permitted_roles = [get_role(interaction, role) for role in permitted_role_ids]
+        print(author_roles)
+        print(permitted_roles)
+        permission = True if any(x in permitted_roles for x in author_roles) else False
+        print(f'Permission: {permission}')
+        return permission, permitted_roles
+    except Exception as e:
+        print(e)
+    return permission
+
+
+def check_roles(permitted_role_ids):
+    async def checkroles(interaction: discord.Interaction):
+        permission, permitted_roles = await checkroles_actual(interaction, permitted_role_ids)
+        print("Inherited permission from checkroles")
+        if not permission:  # raise our custom error to notify the user gracefully
+            role_list = []
+            for role in permitted_role_ids:
+                role_list.append(f'<@&{role}> ')
+                formatted_role_list = " • ".join(role_list)
+            try:
+                raise CommandRoleError(permitted_roles, formatted_role_list)
+            except CommandRoleError as e:
+                print(e)
+                raise
+        return permission
+
+    return app_commands.check(checkroles)
+
+
+async def delete_thread_if_only_bot_message(message: discord.Message):
+    """
+    If the bot's message is the only one in the thread, delete the thread.
+    """
+    messages = [message async for message in message.channel.history()]  # adjust the limit as needed
+    bot_messages = [msg for msg in messages if msg.author.bot]
+
+    if len(bot_messages) == 0:  # i.e., only our original message
+        if isinstance(message.channel, discord.Thread):  # Ensure it's a thread before deleting
+            await message.channel.delete()
+
+
+def can_see_channel(channel_id):
+    """Check if the member can see the specific channel."""
+
+    async def predicate(interaction: discord.Interaction):
+        # Get the channel object using the channel_id
+        channel = interaction.guild.get_channel(channel_id)
+        if not channel:
+            raise commands.CheckFailure("Channel not found in this guild.")
+
+        # Check if the member can read the channel's messages
+        return channel.permissions_for(interaction.user).read_messages
+
+    return commands.check(predicate)
+
