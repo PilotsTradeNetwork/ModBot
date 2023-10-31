@@ -1,9 +1,10 @@
+import os
 from datetime import datetime
-
+import requests
 import discord
 
 from ptn.modbot import constants
-from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules
+from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam
 from ptn.modbot.bot import bot
 from ptn.modbot.database.database import find_infraction, insert_infraction
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error
@@ -45,9 +46,9 @@ async def find_thread(interaction: discord.Interaction, member: discord.Member, 
     evidence_channel = guild.get_channel(channel_evidence())
 
     threads = evidence_channel.threads
-    print(type(threads))
+    # print(type(threads))
     thread = next((thread for thread in threads if str(member_id) in thread.name), None)
-    print(thread)
+    # print(thread)
 
     if thread:
         return thread
@@ -73,7 +74,7 @@ async def display_infractions(interaction: discord.Interaction, member: discord.
     try:
         # search for user id in column 2
         infractions = await find_infraction(member.id, 'warned_user')
-        print(infractions)
+        # print(infractions)
 
         # initialize embed
         embed = discord.Embed(
@@ -131,58 +132,63 @@ async def get_rule(rule_number: int, interaction: discord.Interaction, member: d
     # get the rule embeds from the message
     rules_list = rules_message.embeds
 
+    # get the rule
+    try:
+        rule = rules_list[rule_number - 1]
+    except IndexError:
+        try:
+            raise CustomError(f'That is not a valid rule!')
+        except Exception as e:
+            return await on_generic_error(interaction=interaction, error=e)
+
     if member:
         try:
-            await interaction.channel.send(member.mention)
+            await interaction.channel.send(embed=rule, content=member.mention)
+
         except Exception as e:
             try:
                 raise CustomError(f"Could not mention member: {e}")
             except Exception as e:
                 return await on_generic_error(interaction, e)
-    await interaction.channel.send(embed=rules_list[rule_number - 1])
-    await interaction.response.send_message(f"Sent rule in {interaction.channel.name}", ephemeral=True)
+    else:
+        await interaction.channel.send(embed=rule)
+
+    confirmation_embed = discord.Embed(
+        description=f"✅ Sent rule in <#{interaction.channel}>",
+        color=constants.EMBED_COLOUR_OK
+    )
+    await interaction.response.send_message(embed=confirmation_embed, ephemeral=True)
+
+
+"""
+WARNING HELPER
+"""
 
 
 async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
-                    warning_reason: str, warning_time: int, rule_number: int):
+                    warning_reason: str, warning_time: int, rule_number: int, original_interaction: discord.Interaction
+                    , image: str = None, send_dm: bool = False):
+    spamchannel = interaction.guild.get_channel(channel_botspam())
+
     # find and count previous infractions
     infractions = await find_infraction(warned_user.id, 'warned_user')
-    print(len(infractions))
+    # (len(infractions))
     current_infraction_number = len(infractions) + 1
-    # handle thread (find if exists, create if not)
 
+    # handle thread (find if exists, create if not)
     try:
         thread = await find_thread(interaction=interaction, member=warned_user, guild=interaction.guild)
-        print(thread)
+        # print(thread)
 
         if not thread:
             thread = await create_thread(member=warned_user, guild=interaction.guild)
             print(f"Created thread with id {thread.id}")
 
-        # post infraction to thread
-        embed = discord.Embed(
-            title=f"Infraction #{current_infraction_number}",
-            timestamp=datetime.utcnow()
-        )
-        embed.add_field(
-            name="User",
-            value=f"<@{warned_user.id}>",
-            inline=True
-        )
-        embed.add_field(
-            name="Moderator",
-            value=f"<@{warning_moderator.id}>",
-            inline=True
-        )
-        embed.add_field(
-            name="Reason",
-            value=warning_reason,
-            inline=True
-        )
-
-        await thread.send(embed=embed)
     except Exception as e:
-        raise CustomError(f"Error in thread handling: {e}")
+        try:
+            raise CustomError(f"Error in thread handling: {e}")
+        except Exception as e:
+            return await on_generic_error(interaction=interaction, error=e)
 
     # Insert infraction into database
     try:
@@ -194,19 +200,90 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             warning_reason=warning_reason,
             thread_id=thread.id
         )
-        print(infraction)
     except Exception as e:
         try:
             raise CustomError(f"Error in database interaction: {e}")
         except Exception as e:
             return await on_generic_error(interaction, e)
 
+    # post infraction to thread
+    embed = discord.Embed(
+        title=f"Infraction #{current_infraction_number}",
+        timestamp=datetime.fromtimestamp(warning_time)
+    )
+    embed.add_field(
+        name="User",
+        value=f"<@{warned_user.id}>",
+        inline=True
+    )
+    embed.add_field(
+        name="Moderator",
+        value=f"<@{warning_moderator.id}>",
+        inline=True
+    )
+    embed.add_field(
+        name="Reason",
+        value=warning_reason,
+        inline=True
+    )
+    embed.add_field(
+        name='Rule Broken',
+        value=rule_number,
+        inline=True
+    )
+
+    embed.add_field(
+        name='Database Entry',
+        value=infraction,
+        inline=True
+    )
+    embed.set_image(url=image)
+    await thread.send(embed=embed)
+
+    # DM user
+    if send_dm:
+        warning_dm_message = 'Hello, this message is to inform you that you have received an infraction from the P.T.N ' \
+                             f'Mod team for being deemed in violation of Rule {rule_number}. For any questions about ' \
+                             'the nature of this infraction, please DM a Mod and we will answer them as best as we can.'
+
+        warning_dm_embed = discord.Embed(
+            title='Infraction Received',
+            description=warning_dm_message,
+            color=constants.EMBED_COLOUR_ERROR
+        )
+
+        try:
+            await warned_user.send(embed=warning_dm_embed)
+        except Exception as e:
+            try:
+                raise CustomError(f'Could not DM user: {e}')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
     # Success Message
     embed = discord.Embed(
-        title="✅ Successfully issued and logged infraction.",
+        description="✅ **Successfully issued and logged infraction.**",
         color=constants.EMBED_COLOUR_OK
     )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    spam_embed = discord.Embed(
+        description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
+        color=constants.EMBED_COLOUR_QU
+    )
+    await spamchannel.send(embed=spam_embed)
+
+    original_interaction_message = await original_interaction.original_response()
+
+    try:
+        await original_interaction_message.edit(embed=embed, view=None, content=None)
+    except:
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+"""
+GENERAL HELPERS
+"""
+
 
 def get_message_attachments(message: discord.Message):
     attachments = message.attachments
@@ -216,3 +293,13 @@ def get_message_attachments(message: discord.Message):
             attachment_urls.append(attachment.url)
 
     return attachment_urls
+
+
+def is_image_url(url):
+    # List of allowed image extensions
+    allowed_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
+
+    # Extract the file extension from the URL
+    file_extension = os.path.splitext(url)[1].split('?')[0]  # Splits by '?' to handle query parameters
+
+    return file_extension in allowed_extensions
