@@ -212,6 +212,8 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
 
         if not thread:
             thread = await create_thread(member=warned_user, guild=interaction.guild)
+            ping_message = await thread.send(constants.the_bird)
+            await ping_message.edit(content=f'{interaction.guild.get_role(constants.role_mod()).mention}')
             print(f"Created thread with id {thread.id}")
 
     except Exception as e:
@@ -379,12 +381,15 @@ def check_roles(permitted_role_ids):
 
 async def delete_thread_if_only_bot_message(message: discord.Message):
     """
-    If the bot's message is the only one in the thread, delete the thread.
+    If there are no embed messages from the bot in the thread, delete the thread.
     """
-    messages = [message async for message in message.channel.history()]  # adjust the limit as needed
-    bot_messages = [msg for msg in messages if msg.author.bot]
+    # Fetching all messages in the thread (you might want to adjust the limit based on your needs)
+    messages = [msg async for msg in message.channel.history(limit=None)]
 
-    if len(bot_messages) == 0:  # i.e., only our original message
+    bot_embed_messages = [msg for msg in messages if msg.author.bot and msg.embeds]
+
+    # Check if there are no embed messages from the bot
+    if not bot_embed_messages:
         if isinstance(message.channel, discord.Thread):  # Ensure it's a thread before deleting
             await message.channel.delete()
 
@@ -399,7 +404,10 @@ def can_see_channel(channel_id):
             raise commands.CheckFailure("Channel not found in this guild.")
 
         # Check if the member can read the channel's messages
-        return channel.permissions_for(interaction.user).read_messages
+        if not channel.permissions_for(interaction.user).read_messages:
+            raise commands.CheckFailure("You do not have permissions to run this command.")
+
+        return True
 
     return commands.check(predicate)
 

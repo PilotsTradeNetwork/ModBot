@@ -110,8 +110,10 @@ class InfractionReport(ui.Modal, title='Warn User'):
                 'warning_time': int(time.time()),
                 'rule_number': int(str(self.rule_number))
             }
+            embed = discord.Embed(description='DMing the member is disabled by default, this is for if the infraction '
+                                              'requires manual intervention.', color=constants.EMBED_COLOUR_QU)
             await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
-                                                    ephemeral=True)
+                                                    ephemeral=True, embed=embed)
             # await warn_user(**warning_data)
 
         except Exception as e:
@@ -153,15 +155,16 @@ class DeletionConfirmation(discord.ui.View):
         await original_response.delete()
         await interaction.response.send_message(ephemeral=True, embed=embed_confirmation)
 
-    @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='❌', custom_id='cancel', row=0)
-    async def cancel_deletion(self, interaction: discord.Interaction):
-        original_respone = await self.original_interaction.original_response()
+    @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='✖️', custom_id='cancel', row=0)
+    async def cancel_deletion(self, interaction: discord.Interaction, button: discord.Button):
+        original_response = await self.original_interaction.original_response()
 
         embed_confirmation = discord.Embed(
-            description='❌ Canceled',
-            color=constants.EMBED_COLOUR_ERROR
+            description='❌ Canceled.',
+            color=constants.EMBED_COLOUR_QU
         )
-        await original_respone.edit(embeds=[embed_confirmation], view=None)
+        await original_response.delete()
+        await interaction.response.send_message(ephemeral=True, embed=embed_confirmation)
 
 
 # Class for confirming warning and asking for DM or not
@@ -193,7 +196,8 @@ class WarningAndDMConfirmation(discord.ui.View):
         print(f'{interaction.user.display_name} is reporting an infraction')
 
         try:
-            await interaction.response.edit_message(content='Proceeding with warning...', view=None)
+            embed = discord.Embed(description='Proceeding with warning...', color=constants.EMBED_COLOUR_QU)
+            await interaction.response.edit_message(view=None, embed=embed)
             await warn_user(warned_user=self.warning_data.get('warned_user'),
                             interaction=interaction,
                             warning_moderator=self.warning_data.get('warning_moderator'),
@@ -284,8 +288,10 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                 'image': image
             }
             print('Sending Warning Confirmation')
+            embed = discord.Embed(description='DMing the member is disabled by default, this is for if the infraction '
+                                              'requires manual intervention.', color=constants.EMBED_COLOUR_QU)
             await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
-                                                    ephemeral=True)
+                                                    ephemeral=True, embed=embed)
             await self.message.delete()
         except Exception as e:
             try:
@@ -395,20 +401,17 @@ class ModCommands(commands.Cog):
                 embed.set_image(url=constants.the_bird)
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-            try:
-                raise CustomError('Bots do not have threads.')
-            except Exception as e:
-                return await on_generic_error(interaction, e)
+            embed = discord.Embed(description='❌ Bots cannot have threads', color=constants.EMBED_COLOUR_ERROR)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # find and send thread id
         thread = await find_thread(member=member, guild=guild, interaction=interaction)
         if thread:
             await interaction.response.send_message(f"<#{thread.id}>", ephemeral=True)
         else:
-            try:
-                raise CustomError("Member does not have a thread.")
-            except Exception as e:
-                return await on_generic_error(interaction, e)
+            embed = discord.Embed(description=f'<@{member.id}> does not have a thread.',
+                                  color=constants.EMBED_COLOUR_QU)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name='help', description='Displays a list of available commands.')
     @can_see_channel(constants.privlidged_channel())
@@ -420,9 +423,9 @@ class ModCommands(commands.Cog):
         )
         if check_roles(constants.any_elevated_role):
             # Traditional commands
-            embed.add_field(name="ping", value="Use to check if modbot is online and responding. [Slash Command]",
+            embed.add_field(name="ping", value="Use to check if modbot is online and responding. [Mention Bot]",
                             inline=False)
-            embed.add_field(name="sync", value="Synchronise modbot interactions with server [Slash Command]",
+            embed.add_field(name="sync", value="Synchronise modbot interactions with server [Mention Bot]",
                             inline=False)
 
             # Slash commands
@@ -431,6 +434,8 @@ class ModCommands(commands.Cog):
                             inline=False)
             embed.add_field(name="warn", value="Warn a user [Slash Command]", inline=False)
             embed.add_field(name="find_thread", value="Finds a thread given a member [Slash Command]", inline=False)
+            embed.add_field(name='sync_infractions', value='Sync infractions from the database to the thread '
+                                                           '[Slash Command]', inline=False)
 
             # Context Menu Commands (based on their name attributes)
             embed.add_field(name="View Infractions", value="View a member infractions [Right-click on member]",
@@ -449,19 +454,45 @@ class ModCommands(commands.Cog):
         # Send the embed to the user
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name='sync_infractions')
+    @app_commands.command(name='sync_infractions', description='Sync infractions from the database to the thread')
     @check_roles(constants.any_elevated_role)
     async def sync_infractions(self, interaction: discord.Interaction, member: discord.Member):
         print(f'{interaction.user.display_name} called sync_infractions')
         guild = interaction.guild
+        botspam = guild.get_channel(channel_botspam())
+
+        db_infractions = await find_infraction(member.id, 'warned_user')
+        # print(db_infractions)
         thread = await find_thread(interaction, member, guild)
+
+        # If there are no infractions in the database and a thread exists, delete the thread and inform the user.
+        if not db_infractions and thread:
+            await thread.delete()
+            response_embed = discord.Embed(
+                description=f'Thread for <@{member.id}> deleted as no infractions were found in the database.',
+                color=constants.EMBED_COLOUR_OK)
+
+            spam_embed = discord.Embed(
+                description=f'Thread for <@{member.id}> deleted in sync action from <@{interaction.user.id}>.',
+                color=constants.EMBED_COLOUR_QU
+            )
+            await interaction.response.send_message(embed=response_embed, ephemeral=True)
+            await botspam.send(embed=spam_embed)
+            return
+
+        # If no infractions exist in the database for the member and no thread exists, exit early.
+        if not db_infractions:
+            response_embed = discord.Embed(description=f'No infractions found for <@{member.id}> in the database.',
+                                           color=constants.EMBED_COLOUR_OK)
+            await interaction.response.send_message(embed=response_embed, ephemeral=True)
+            return
+
+        if not thread:
+            thread = await create_thread(member, guild)
+
         response_embed = discord.Embed(description=f'Syncing Infractions for <@{member.id}>...')
         await interaction.response.send_message(embed=response_embed, ephemeral=True)
 
-        if not thread:
-            thread = create_thread(member, guild)
-
-        # Helper function to extract the numeric ID from strings like <@196749279807668225>
         def extract_id(value: str) -> int:
             match = re.search(r'(\d+)', value)
             if match:
@@ -472,7 +503,7 @@ class ModCommands(commands.Cog):
             return {
                 'warned_user': extract_id(embed.fields[0].value),
                 'warning_moderator': extract_id(embed.fields[1].value),
-                'warning_time': embed.timestamp.timestamp(),  # convert to UNIX timestamp
+                'warning_time': embed.timestamp.timestamp(),
                 'warning_reason': embed.fields[2].value,
                 'rule_broken': embed.fields[3].value,
                 'entry_id': embed.fields[4].value,
@@ -485,67 +516,46 @@ class ModCommands(commands.Cog):
                 infraction = extract_infraction_from_embed(embed)
                 thread_infractions.append(infraction)
 
-        db_infractions = await find_infraction('warned_user', member.id)
-
+        db_infractions_raw = await find_infraction(member.id, 'warned_user')
+        db_infractions = [infraction.to_dictionary() for infraction in db_infractions_raw]
         db_ids = {infraction['entry_id'] for infraction in db_infractions}
-        thread_ids = {infraction['entry_id'] for infraction in thread_infractions}
-        missing_in_thread = db_ids - thread_ids
+        print(db_ids)
+        thread_ids = {int(infraction['entry_id']) for infraction in thread_infractions}
+        print(thread_ids)
 
-        if missing_in_thread:
-            response_embed = discord.Embed(description=f'Infractions missing in thread, Syncing...')
-            await interaction.response.edit_message(embed=response_embed, ephemeral=True)
-            await thread.purge()
-            for itx, infraction in enumerate(db_infractions):
-                # post infraction to thread
+        # Infractions missing in the thread
+        missing_in_thread = db_ids - thread_ids
+        print(missing_in_thread)
+        for itx, infraction in enumerate(db_infractions):
+            if infraction['entry_id'] in missing_in_thread:
+                print('MISSING IN THREAD, SENDING...')
                 embed = discord.Embed(
-                    title=f"Infraction #{itx}",
-                    timestamp=datetime.fromtimestamp(infraction.warning_time)
+                    title=f"Infraction #{itx + 1}",
+                    timestamp=datetime.fromtimestamp(infraction['warning_time'])
                 )
-                embed.add_field(
-                    name="User",
-                    value=f"<@{infraction.warned_user}>",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Moderator",
-                    value=f"<@{infraction.warning_moderator}>",
-                    inline=True
-                )
-                embed.add_field(
-                    name="Reason",
-                    value=infraction.warning_reason,
-                    inline=True
-                )
-                embed.add_field(
-                    name='Rule Broken',
-                    value=infraction.rule_broken,
-                    inline=True
-                )
-                embed.add_field(
-                    name='Database Entry',
-                    value=infraction.entry_id,
-                    inline=True
-                )
+                embed.add_field(name="User", value=f"<@{infraction['warned_user']}>", inline=True)
+                embed.add_field(name="Moderator", value=f"<@{infraction['warning_moderator']}>", inline=True)
+                embed.add_field(name="Reason", value=infraction['warning_reason'], inline=True)
+                embed.add_field(name='Rule Broken', value=infraction['rule_broken'], inline=True)
+                embed.add_field(name='Database Entry', value=infraction['entry_id'], inline=True)
                 embed.set_footer(text='Synced from database')
                 await thread.send(embed=embed)
 
-        # Infractions in thread but not in database
-        missing_in_db = thread_ids - db_ids
-        for infraction in thread_infractions:
-            if infraction['entry_id'] in missing_in_db:
-                await insert_infraction(
-                    warned_user=int(infraction['warned_user']),
-                    warning_moderator=int(infraction['warning_moderator']),
-                    warning_time=int(infraction['warning_time']),
-                    rule_broken=int(infraction['rule_broken']) if infraction['rule_broken'] else None,
-                    warning_reason=infraction['warning_reason'],
-                    thread_id=int(infraction['thread_id'])
-                )
+        # Infractions present in thread but not in database
+        extra_in_thread = thread_ids - db_ids
+        print(extra_in_thread)
+        if extra_in_thread:
+            messages_to_delete = []
+            async for message in thread.history():
+                for embed in message.embeds:
+                    if int(embed.fields[4].value) in extra_in_thread:
+                        messages_to_delete.append(message)
+            for msg in messages_to_delete:
+                await msg.delete()
 
         await interaction.delete_original_response()
         await interaction.followup.send(embed=discord.Embed(description=f'✅ Infractions Synced',
                                                             color=constants.EMBED_COLOUR_OK), ephemeral=True)
-
 
 
 """
@@ -559,17 +569,14 @@ CONTEXT MENU COMMANDS
 async def view_infractions(interaction: discord.Interaction, member: discord.Member):
     print(f"view_infractions called by {interaction.user.display_name} for {member.display_name}")
     guild = interaction.guild
-    spamchannel = bot.get_channel(constants.channel_botspam())
     if member.bot:
         if member == bot.user:
             embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
             embed.set_image(url=constants.the_bird)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        try:
-            raise CustomError('Bots do not have infractions.')
-        except Exception as e:
-            return await on_generic_error(interaction, e)
+        embed = discord.Embed(description='❌ Bots cannot have infractions', color=constants.EMBED_COLOUR_ERROR)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     await display_infractions(interaction=interaction, member=member, guild=guild)
 
@@ -632,7 +639,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 
     reported_user = message.author
     report_time = datetime.now()
-    report_title = f'Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
+    report_title = f'### Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
                    f'<#{interaction.channel.id}>.\n'
 
     embed = discord.Embed(
@@ -641,7 +648,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         color=constants.EMBED_COLOUR_QU
     )
 
-    report_message = f'Message Link: {message.jump_url}\n\n'
+    report_message = f'Message Link: {message.jump_url}\n'
 
     if message.content:
         report_message += f"Message Text: {message.clean_content}\n"
@@ -716,6 +723,12 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
         except Exception as e:
             return await on_generic_error(interaction, e)
 
+    except IndexError:
+        try:
+            raise CustomError(f'Must be on an infraction message.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
 
 @bot.tree.context_menu(name='Warning from Report')
 @check_roles(constants.any_elevated_role)
@@ -746,6 +759,8 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
             return await on_generic_error(interaction, e)
 
     content_field = embed.fields[0].value
+    pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
+    content_field = re.sub(pattern, '', content_field)
     report_info = embed.description
     image = None
     if embed.image:
@@ -787,8 +802,11 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                     'image': image
                 }
 
+                embed = discord.Embed(
+                    description='DMing the member is disabled by default, this is for if the infraction '
+                                'requires manual intervention.', color=constants.EMBED_COLOUR_QU)
                 await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
-                                                        ephemeral=True)
+                                                        ephemeral=True, embed=embed)
                 await message.delete()
             except Exception as e:
                 try:
