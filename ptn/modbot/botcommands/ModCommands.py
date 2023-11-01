@@ -16,7 +16,7 @@ from ptn.modbot._metadata import __version__
 # import bot
 from ptn.modbot.bot import bot
 from ptn.modbot.constants import role_council, role_mod, role_sommelier, bc_categories, channel_evidence, \
-    channel_botspam
+    channel_botspam, forum_channel
 from ptn.modbot.database.database import insert_infraction, find_infraction, delete_single_warning
 
 # local modules
@@ -701,7 +701,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 async def remove_infraction(interaction: discord.Interaction, message: discord.Message):
     channel = interaction.channel
     try:
-        if channel.parent.id == channel_evidence() and isinstance(channel, discord.Thread):
+        if channel.parent.id == forum_channel() and isinstance(channel, discord.Thread):
             infraction_embed = message.embeds[0]
             infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
             infraction_entry = int(infraction_embed.fields[4].value)
@@ -719,7 +719,7 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
                     embeds=[embed, infraction_embed], ephemeral=True)
     except AttributeError:
         try:
-            raise CustomError(f'Must be in a thread in <#{channel_evidence()}>.')
+            raise CustomError(f'Must be in a thread in <#{forum_channel()}>.')
         except Exception as e:
             return await on_generic_error(interaction, e)
 
@@ -739,7 +739,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
     # Check if in evidence channel
     if not (channel.id == channel_evidence()):
         try:
-            raise CustomError(f'Must be in <#{channel_evidence()}>.')
+            raise CustomError(f'Must be in <#{forum_channel()}>.')
         except Exception as e:
             return await on_generic_error(interaction, e)
 

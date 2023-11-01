@@ -6,7 +6,7 @@ from discord import app_commands
 from discord.app_commands import commands
 
 from ptn.modbot import constants
-from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam
+from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam, forum_channel
 from ptn.modbot.bot import bot
 from ptn.modbot.database.database import find_infraction, insert_infraction
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error, CommandRoleError
@@ -27,11 +27,11 @@ def create_thread(member: discord.Member, guild: discord.Guild):
 
         # get channel info
         print(f'create_thread called for {member_name}')
-        infractions_channel = guild.get_channel_or_thread(channel_evidence())
+        infractions_channel = guild.get_channel_or_thread(forum_channel())
 
         # create thread
         thread_name = f'{member_name} | {member_id}'
-        return infractions_channel.create_thread(name=thread_name, type=discord.ChannelType.public_thread)
+        return infractions_channel.create_thread(name=thread_name, content='🔨')
     except Exception as e:
         raise CustomError(f"Error in thread creation: {e}")
 
@@ -45,7 +45,7 @@ async def find_thread(interaction: discord.Interaction, member: discord.Member, 
     # get channel info
     print(f'find_thread called for {member_name}')
 
-    evidence_channel = guild.get_channel(channel_evidence())
+    evidence_channel = guild.get_channel(forum_channel())
 
     threads = evidence_channel.threads
     # print(type(threads))
@@ -208,10 +208,11 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
     # handle thread (find if exists, create if not)
     try:
         thread = await find_thread(interaction=interaction, member=warned_user, guild=interaction.guild)
-        # print(thread)
+        print(thread)
 
         if not thread:
-            thread = await create_thread(member=warned_user, guild=interaction.guild)
+            await create_thread(member=warned_user, guild=interaction.guild)
+            thread = await find_thread(interaction, warned_user, guild=interaction.guild)
             ping_message = await thread.send(constants.the_bird)
             await ping_message.edit(content=f'{interaction.guild.get_role(constants.role_mod()).mention}')
             print(f"Created thread with id {thread.id}")
