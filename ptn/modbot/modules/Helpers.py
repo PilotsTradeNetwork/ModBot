@@ -6,7 +6,8 @@ from discord import app_commands
 from discord.app_commands import commands
 
 from ptn.modbot import constants
-from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam, forum_channel
+from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam, forum_channel, \
+    EMBED_COLOUR_CAUTION, EMBED_COLOUR_ORANG, EMBED_COLOUR_EVIL
 from ptn.modbot.bot import bot
 from ptn.modbot.database.database import find_infraction, insert_infraction
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error, CommandRoleError
@@ -199,6 +200,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
                     warning_reason: str, warning_time: int, rule_number: int, original_interaction: discord.Interaction
                     , image: str = None, send_dm: bool = False):
     spamchannel = interaction.guild.get_channel(channel_botspam())
+    evidence_channel = interaction.guild.get_channel(channel_evidence())
 
     # find and count previous infractions
     infractions = await find_infraction(warned_user.id, 'warned_user')
@@ -213,7 +215,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         if not thread:
             await create_thread(member=warned_user, guild=interaction.guild)
             thread = await find_thread(interaction, warned_user, guild=interaction.guild)
-            ping_message = await thread.send(constants.the_bird)
+            ping_message = await thread.send('Ghost pinging...')
             await ping_message.edit(content=f'{interaction.guild.get_role(constants.role_mod()).mention}')
             print(f"Created thread with id {thread.id}")
 
@@ -238,11 +240,14 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             raise CustomError(f"Error in database interaction: {e}")
         except Exception as e:
             return await on_generic_error(interaction, e)
+    color = warning_color(current_infraction_number)
+    print(f'color: {color}')
 
     # post infraction to thread
     embed = discord.Embed(
         title=f"Infraction #{current_infraction_number}",
-        timestamp=datetime.fromtimestamp(warning_time)
+        timestamp=datetime.fromtimestamp(warning_time),
+        color=color
     )
     embed.add_field(
         name="User",
@@ -279,6 +284,12 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
                              f'Mod team for being deemed in violation of Rule {rule_number}. For any questions about ' \
                              'the nature of this infraction, please DM a Mod and we will answer them as best as we can.'
 
+        reason_dm_embed = discord.Embed(
+            title='Warning Reason',
+            description=warning_reason,
+            color=constants.EMBED_COLOUR_QU
+        )
+
         warning_dm_embed = discord.Embed(
             title='Infraction Received',
             description=warning_dm_message,
@@ -286,7 +297,8 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         )
 
         try:
-            await warned_user.send(embed=warning_dm_embed)
+            await warned_user.send(embeds=[warning_dm_embed, reason_dm_embed])
+
         except Exception as e:
             try:
                 raise CustomError(f'Could not DM user: {e}')
@@ -299,11 +311,18 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         color=constants.EMBED_COLOUR_OK
     )
 
+    announcement_embed = discord.Embed(
+        description=f'ℹ️ **A new infraction was created for <@{warned_user.id}> by <@{warning_moderator.id}>.**\n'
+                    f'View in <#{thread.id}>',
+        color=constants.EMBED_COLOUR_QU
+    )
+
     spam_embed = discord.Embed(
         description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
         color=constants.EMBED_COLOUR_QU
     )
     await spamchannel.send(embed=spam_embed)
+    await evidence_channel.send(embed=announcement_embed)
 
     original_interaction_message = await original_interaction.original_response()
 
@@ -412,3 +431,12 @@ def can_see_channel(channel_id):
 
     return commands.check(predicate)
 
+
+def warning_color(warning_number: int):
+    # color handling
+    if warning_number == 1:
+        return EMBED_COLOUR_CAUTION
+    elif warning_number == 2:
+        return EMBED_COLOUR_ORANG
+    else:  # this covers all cases where current_infraction_number is 3 or above
+        return EMBED_COLOUR_EVIL

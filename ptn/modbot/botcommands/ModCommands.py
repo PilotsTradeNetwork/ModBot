@@ -16,13 +16,14 @@ from ptn.modbot._metadata import __version__
 # import bot
 from ptn.modbot.bot import bot
 from ptn.modbot.constants import role_council, role_mod, role_sommelier, bc_categories, channel_evidence, \
-    channel_botspam, forum_channel
+    channel_botspam, forum_channel, dyno_user
 from ptn.modbot.database.database import insert_infraction, find_infraction, delete_single_warning
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
-    get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel
+    get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
+    warning_color
 
 """
 A primitive global error handler for text commands.
@@ -134,7 +135,13 @@ class DeletionConfirmation(discord.ui.View):
     @discord.ui.button(label='Delete', style=discord.ButtonStyle.green, emoji='⚠️', custom_id='delete', row=0)
     async def delete_infraction_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         botspam = interaction.guild.get_channel(channel_botspam())
+
+        # Get the infraction number
+        infraction_number = int(self.message.embeds[0].title.split('#')[1])
+        # Delete infraction in thread
         await self.message.delete()
+
+        # Delete infraction in database
         await delete_single_warning(self.infraction_entry)
 
         original_response = await self.original_interaction.original_response()
@@ -154,6 +161,26 @@ class DeletionConfirmation(discord.ui.View):
         )
         await original_response.delete()
         await interaction.response.send_message(ephemeral=True, embed=embed_confirmation)
+
+        print('Infraction Removal Successful')
+
+        messages = [message async for message in interaction.channel.history(limit=100)]
+        # Update infraction numbers
+        for message in messages:
+            if message.embeds:
+                embed = message.embeds[0]
+                title = embed.title
+                if title.startswith("Infraction #"):
+                    current_number = int(title.split('#')[1])
+                    if current_number >= infraction_number:
+                        new_title = f"Infraction #{current_number - 1}"
+                        new_embed = embed.to_dict()
+                        new_embed['title'] = new_title
+                        new_embed['color'] = warning_color(current_number - 1)
+                        await message.edit(embed=discord.Embed.from_dict(new_embed))
+                        print('Updated message')
+
+
 
     @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='✖️', custom_id='cancel', row=0)
     async def cancel_deletion(self, interaction: discord.Interaction, button: discord.Button):
@@ -463,6 +490,7 @@ class ModCommands(commands.Cog):
 
         db_infractions = await find_infraction(member.id, 'warned_user')
         # print(db_infractions)
+        await find_thread(interaction, member, guild)
         thread = await find_thread(interaction, member, guild)
 
         # If there are no infractions in the database and a thread exists, delete the thread and inform the user.
@@ -739,12 +767,18 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
     # Check if in evidence channel
     if not (channel.id == channel_evidence()):
         try:
-            raise CustomError(f'Must be in <#{forum_channel()}>.')
+            raise CustomError(f'Must be in <#{channel_evidence()}>.')
         except Exception as e:
             return await on_generic_error(interaction, e)
+    # Check if message is from Dyno
+    dyno = False
+    print(message.author)
+    if message.author.id == dyno_user():
+        dyno = True
+        print('WARNING FROM DYNO BONK')
 
     # Check if message is from the bot
-    if not (message.author == bot.user):
+    elif not (message.author == bot.user):
         try:
             raise CustomError(f'Message must be from <@{bot.user.id}>')
         except Exception as e:
@@ -752,28 +786,75 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
 
     try:
         embed = message.embeds[0]
+        print(embed)
     except IndexError:
         try:
             raise CustomError('Must be run on reports only!')
         except Exception as e:
             return await on_generic_error(interaction, e)
+    if not dyno:
+        content_field = embed.fields[0].value
+        pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
+        content_field = re.sub(pattern, '', content_field)
+        report_info = embed.description
+        image = None
+        if embed.image:
+            image = embed.image.url
+        # print(report_info)
 
-    content_field = embed.fields[0].value
-    pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
-    content_field = re.sub(pattern, '', content_field)
-    report_info = embed.description
-    image = None
-    if embed.image:
-        image = embed.image.url
-    # print(report_info)
+        numbers = re.findall(r'<[@#](\d+)>', report_info)
+        reporter_id, reported_user_id, channel_id = numbers
 
-    numbers = re.findall(r'<[@#](\d+)>', report_info)
-    reporter_id, reported_user_id, channel_id = numbers
+        # get reported user
+        reported_user = interaction.guild.get_member(int(reported_user_id))
+        reporter_user = interaction.guild.get_member(int(reporter_id))
+        content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
 
-    # get reported user
-    reported_user = interaction.guild.get_member(int(reported_user_id))
-    reporter_user = interaction.guild.get_member(int(reporter_id))
-    content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
+    else:
+        fields = embed.fields
+        main_content = embed.description
+
+        header_pattern = re.compile(r"<@\d+>.*<#\d+>\*\*")
+        if not bool(header_pattern.search(main_content)):
+            try:
+                raise CustomError('Not a dyno report!')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
+        hit_reason = fields[0].value
+        hit_word = fields[1].value
+
+        # Compile the regular expression patterns
+        user_pattern = re.compile(r"<@(\d+)>")
+        channel_pattern = re.compile(r"<#(\d+)>")
+        # Assume that the context starts after the '**' that follows the channel id
+        context_pattern = re.compile(r"\*\*(?:(?!\*\*).)*\*\*(.*)", re.DOTALL)
+
+        # Search the patterns in the message
+        reported_user_match = user_pattern.search(main_content)
+        reported_channel_match = channel_pattern.search(main_content)
+        reported_context_match = context_pattern.search(main_content)
+
+        # Extract the groups if matches were found
+        reported_user_id = reported_user_match.group(1) if reported_user_match else None
+        reported_user = interaction.guild.get_member(int(reported_user_id))
+        if not reported_user:
+            try:
+                raise CustomError(f'Member not found in guild! <@{int(reported_user_id)}?')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
+        reported_channel = reported_channel_match.group(1) if reported_channel_match else None
+        # The context is everything after the second '**', so strip() is used to remove whitespace
+        reported_context = reported_context_match.group(1).strip() if reported_context_match else None
+        print(reported_context)
+        content_field = f'**From Dyno**\nWord Hit: {hit_word}\nHit Reason: {hit_reason}\nChannel: <#{reported_channel}>'
+        image = None
+
+        # await interaction.response.send_message(f'TESTING:\nREPORTED_USER:<@{int(reported_user)}>\n'
+        #                                         f'REPORTED_CHANNEL:<#{int(reported_channel)}>\n'
+        #                                         f'REPORT_CONTEXT:{reported_context}')
+        # return
 
     # print(reported_user_id)
     # print('TESTOMG:' + str(reported_user))
