@@ -18,7 +18,7 @@ from ptn.modbot.bot import bot
 # import constants
 import ptn.modbot.constants as constants
 from ptn.modbot.constants import role_council, role_mod, channel_evidence, \
-    channel_botspam, forum_channel, dyno_user
+    channel_botspam, forum_channel, dyno_user, atlas_channel
 
 # import database functions
 from ptn.modbot.database.database import find_infraction, delete_single_warning
@@ -586,6 +586,30 @@ class ModCommands(commands.Cog):
         await interaction.delete_original_response()
         await interaction.followup.send(embed=discord.Embed(description=f'✅ Infractions Synced',
                                                             color=constants.EMBED_COLOUR_OK), ephemeral=True)
+
+    @app_commands.command(name='summon_mod', description='Summons a mod for help in a channel')
+    @can_see_channel(atlas_channel())
+    async def summon_mod(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        evidence_channel = guild.get_channel(channel_evidence())
+        mod_role = guild.get_role(role_mod())
+
+        waiting_embed = discord.Embed(description='🕰️ Summoning a mod...',
+                                      color=constants.EMBED_COLOUR_QU)
+
+        await interaction.response.send_message(embed=waiting_embed, ephemeral=True)
+
+        # Send summon message to evidence
+        alert_embed = discord.Embed(title='📟 A user is requesting a mod',
+                                    description=f'{interaction.user.mention} is requesting a mod in '
+                                          f'{interaction.channel.jump_url}.',
+                                    color=constants.EMBED_COLOUR_CAUTION)
+
+        await evidence_channel.send(content=f'<@&{role_mod()}>', embed=alert_embed)
+
+        success_embed = discord.Embed(description='✅ A mod has been pinged', color=constants.EMBED_COLOUR_OK)
+
+        await interaction.edit_original_response(embed=success_embed)
 
 
 """
