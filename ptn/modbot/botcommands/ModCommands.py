@@ -3,27 +3,31 @@ import re
 import time
 from datetime import datetime
 
+# import discord
 import discord
 from discord import app_commands, ui
 from discord.app_commands import describe
 from discord.ext import commands
 
-import ptn.modbot.constants as constants
-
-# local constants
+# import metadata
 from ptn.modbot._metadata import __version__
 
 # import bot
 from ptn.modbot.bot import bot
-from ptn.modbot.constants import role_council, role_mod, role_sommelier, bc_categories, channel_evidence, \
+
+# import constants
+import ptn.modbot.constants as constants
+from ptn.modbot.constants import role_council, role_mod, channel_evidence, \
     channel_botspam, forum_channel, dyno_user
-from ptn.modbot.database.database import insert_infraction, find_infraction, delete_single_warning
+
+# import database functions
+from ptn.modbot.database.database import find_infraction, delete_single_warning
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
     get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
-    warning_color
+    warning_color, is_in_channel
 
 """
 A primitive global error handler for text commands.
@@ -179,8 +183,6 @@ class DeletionConfirmation(discord.ui.View):
                         new_embed['color'] = warning_color(current_number - 1)
                         await message.edit(embed=discord.Embed.from_dict(new_embed))
                         print('Updated message')
-
-
 
     @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='✖️', custom_id='cancel', row=0)
     async def cancel_deletion(self, interaction: discord.Interaction, button: discord.Button):
@@ -725,11 +727,12 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 
 
 @bot.tree.context_menu(name='Remove Infraction')
+@is_in_channel(forum_channel())
 @check_roles(constants.any_elevated_role)
 async def remove_infraction(interaction: discord.Interaction, message: discord.Message):
     channel = interaction.channel
     try:
-        if channel.parent.id == forum_channel() and isinstance(channel, discord.Thread):
+        if isinstance(channel, discord.Thread):
             infraction_embed = message.embeds[0]
             infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
             infraction_entry = int(infraction_embed.fields[4].value)
@@ -759,17 +762,10 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
 
 
 @bot.tree.context_menu(name='Warning from Report')
+@is_in_channel(channel_evidence())
 @check_roles(constants.any_elevated_role)
 async def report_to_warn(interaction: discord.Interaction, message: discord.Message):
-    channel = interaction.channel
-    print(channel.id == channel_evidence())
 
-    # Check if in evidence channel
-    if not (channel.id == channel_evidence()):
-        try:
-            raise CustomError(f'Must be in <#{channel_evidence()}>.')
-        except Exception as e:
-            return await on_generic_error(interaction, e)
     # Check if message is from Dyno
     dyno = False
     print(message.author)
@@ -792,21 +788,50 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
             raise CustomError('Must be run on reports only!')
         except Exception as e:
             return await on_generic_error(interaction, e)
+
+    # If message is from ModBot
     if not dyno:
-        content_field = embed.fields[0].value
+        try:
+            content_field = embed.fields[0].value
+        except:
+            try:
+                raise CustomError('Must be run on reports only!')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
+        # Get the link to the message
         pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
         content_field = re.sub(pattern, '', content_field)
         report_info = embed.description
         image = None
+
+        # Get image if it is in report
         if embed.image:
             image = embed.image.url
-        # print(report_info)
 
+        # Get the ids for the reporter, the reported, and the channel which the id is from
         numbers = re.findall(r'<[@#](\d+)>', report_info)
         reporter_id, reported_user_id, channel_id = numbers
 
         # get reported user
         reported_user = interaction.guild.get_member(int(reported_user_id))
+        if not reported_user:
+            try:
+                reported_user = await bot.fetch_user(reported_user_id)
+
+            except discord.NotFound:
+                try:
+                    raise CustomError('Could not find the user in the report')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            except discord.HTTPException as e:
+                try:
+                    raise CustomError(f'HTTP Error: {e}')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+        # Reporter should probably be in the server, if not then wtf
         reporter_user = interaction.guild.get_member(int(reporter_id))
         content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
 
@@ -845,19 +870,12 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                 return await on_generic_error(interaction, e)
 
         reported_channel = reported_channel_match.group(1) if reported_channel_match else None
+
         # The context is everything after the second '**', so strip() is used to remove whitespace
         reported_context = reported_context_match.group(1).strip() if reported_context_match else None
         print(reported_context)
         content_field = f'**From Dyno**\nWord Hit: {hit_word}\nHit Reason: {hit_reason}\nChannel: <#{reported_channel}>'
         image = None
-
-        # await interaction.response.send_message(f'TESTING:\nREPORTED_USER:<@{int(reported_user)}>\n'
-        #                                         f'REPORTED_CHANNEL:<#{int(reported_channel)}>\n'
-        #                                         f'REPORT_CONTEXT:{reported_context}')
-        # return
-
-    # print(reported_user_id)
-    # print('TESTOMG:' + str(reported_user))
 
     # Modal for rule number reporting
     class RuleModal(discord.ui.Modal):
@@ -896,4 +914,3 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                     return await on_generic_error(interaction, e)
 
     await interaction.response.send_modal(RuleModal())
-    # await interaction.response.send_message(f'TEST:\nCONTENT:{content_field}\nREPORT INFO:{report_info}')

@@ -1,6 +1,5 @@
 import os
 from datetime import datetime
-import requests
 import discord
 from discord import app_commands
 from discord.app_commands import commands
@@ -8,7 +7,6 @@ from discord.app_commands import commands
 from ptn.modbot import constants
 from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam, forum_channel, \
     EMBED_COLOUR_CAUTION, EMBED_COLOUR_ORANG, EMBED_COLOUR_EVIL
-from ptn.modbot.bot import bot
 from ptn.modbot.database.database import find_infraction, insert_infraction
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error, CommandRoleError
 
@@ -440,3 +438,18 @@ def warning_color(warning_number: int):
         return EMBED_COLOUR_ORANG
     else:  # this covers all cases where current_infraction_number is 3 or above
         return EMBED_COLOUR_EVIL
+
+
+def is_in_channel(channel_id):
+    async def predicate(interaction: discord.Interaction):
+        # Get the channel object using the channel_id
+        channel_to_check = interaction.guild.get_channel(channel_id)
+        current_channel = interaction.channel
+
+        # Check if the channel id is the same as the channel the interaction is run in
+        if not channel_to_check == current_channel:
+            raise commands.CheckFailure(f'This command can only be run in <#{channel_to_check.id}>!')
+
+        return True
+
+    return commands.check(predicate)
