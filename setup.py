@@ -28,18 +28,34 @@ setup(
     packages=[
         'ptn.modbot', # core
         'ptn.modbot.botcommands', # user interactions
-        'ptn.modbot.database' # database
+        'ptn.modbot.database', # database
+        'ptn.modbot.modules',
+        'ptn.modbot.classes'
         ],
     description='Pilots Trade Network Moderator Assistance Bot',
     long_description=long_description,
     author='Charles Tosh',
     url='',
     install_requires=[
+        'aiohttp==3.8.6',
+        'aiosignal==1.3.1',
+        'async-timeout==4.0.3',
+        'attrs==23.1.0',
+        'certifi==2023.7.22',
+        'charset-normalizer==3.3.0',
         'DateTime==4.3',
-        'discord==1.0.1',
-        'discord.py==2.3.2',
+        'discord.py>=2.3.2',
+        'frozenlist==1.4.0',
+        'idna==3.4',
+        'multidict==6.0.4',
+        'python-dateutil==2.8.2',
         'python-dotenv==0.15.0',
-        'python-dateutil>=2.8.1',
+        'pytz==2023.3.post1',
+        'requests==2.31.0',
+        'six==1.16.0',
+        'urllib3==2.0.7',
+        'yarl==1.9.2',
+        'zope.interface==6.1'
     ],
     entry_points={
         'console_scripts': [
@@ -51,5 +67,5 @@ setup(
     project_urls={
         "Source": "https://github.com/PilotsTradeNetwork/modbot",
     },
-    python_required='>=3.9',
+    python_required='>=3.10',
 )

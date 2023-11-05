@@ -727,12 +727,11 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 
 
 @bot.tree.context_menu(name='Remove Infraction')
-@is_in_channel(forum_channel())
 @check_roles(constants.any_elevated_role)
 async def remove_infraction(interaction: discord.Interaction, message: discord.Message):
     channel = interaction.channel
     try:
-        if isinstance(channel, discord.Thread):
+        if interaction.channel.parent_id == forum_channel() and isinstance(channel, discord.Thread):
             infraction_embed = message.embeds[0]
             infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
             infraction_entry = int(infraction_embed.fields[4].value)
