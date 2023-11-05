@@ -120,7 +120,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+ptn/modbot/.env
 .venv
 env/
 venv/
@@ -174,4 +174,4 @@ pip-delete-this-directory.txt
 test.py
 
 # secrets
-.env
+ptn/modbot/.env

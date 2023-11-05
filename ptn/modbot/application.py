@@ -8,7 +8,7 @@ import asyncio
 import os
 
 # import build functions
-from ptn.modbot.database.database import build_database_on_startup, build_directory_tree_on_startup
+from ptn.modbot.database.database import build_database_on_startup
 
 from ptn.modbot.bot import bot
 
