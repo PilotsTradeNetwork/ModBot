@@ -18,7 +18,7 @@ from ptn.modbot.bot import bot
 # import constants
 import ptn.modbot.constants as constants
 from ptn.modbot.constants import role_council, role_mod, channel_evidence, \
-    channel_botspam, forum_channel, dyno_user, atlas_channel
+    channel_botspam, forum_channel, dyno_user, atlas_channel, any_elevated_role
 
 # import database functions
 from ptn.modbot.database.database import find_infraction, delete_single_warning
@@ -157,7 +157,9 @@ class DeletionConfirmation(discord.ui.View):
         await botspam.send(embed=spam_embed)
 
         # Call our helper function to check and delete the thread if necessary
-        await delete_thread_if_only_bot_message(self.message)
+        user_messages = [message async for message in interaction.channel.history() if not message.author.bot]
+        if not user_messages:
+            await delete_thread_if_only_bot_message(self.message)
 
         embed_confirmation = discord.Embed(
             description='✅ Infraction Deleted',
@@ -220,7 +222,7 @@ class WarningAndDMConfirmation(discord.ui.View):
     @discord.ui.button(label='Confirm Infraction', style=discord.ButtonStyle.green, emoji='✔️',
                        custom_id='confirm_send', row=1)
     async def confirm_infraction(self, interaction: discord.Interaction, button: discord.ui.Button):
-        print('received infraction confirmation')
+        # print('received infraction confirmation')
         button.disabled = True
         print(f'{interaction.user.display_name} is reporting an infraction')
 
@@ -234,7 +236,9 @@ class WarningAndDMConfirmation(discord.ui.View):
                             warning_reason=self.warning_data.get('warning_reason'),
                             rule_number=self.warning_data.get('rule_number'),
                             send_dm=self.send_dm,
-                            image=self.warning_data.get('image'), original_interaction=interaction)
+                            image=self.warning_data.get('image'),
+                            original_interaction=interaction,
+                            warning_message=self.warning_data.get('warning_message'))
         except Exception as e:
             return await on_generic_error(interaction, e)
 
@@ -272,15 +276,15 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
             if not await rule_check(rule_number=int(str(self.rule_number)), interaction=interaction):
                 return
 
-            warning_reason = "**Infraction Message:**\n"
-
+            warning_reason = "## Infraction Reason\n\n"
+            warning_message = ''
             if self.warning_description:
-                warning_reason += f"**Context:** {self.warning_description}\n"
+                warning_reason += f"**Warning Reason from Mod:** {self.warning_description}\n\n"
 
             if self.stickers:
-                warning_reason += f'**Message Stickers:** \n'
-                for sticker in self.stickers:
-                    warning_reason += f'{sticker.url}\n'
+                warning_message += f'**Message Stickers:** \n\n'
+                for itx, sticker in enumerate(self.stickers, start=1):
+                    warning_message += f'[Sticker {itx}]({sticker.url})\n\n'
                 print('Stickers in Message')
 
             if self.attachments:
@@ -292,17 +296,17 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                     if not picture_loaded and is_image_url(url):
                         image = url
                         picture_loaded = True
-                        warning_reason += f'**Image Link:** {url}\n'
+                        warning_message += f'**Image Link:** [Image]({url})\n\n'
                     else:
                         non_image_attachments.append(url)
 
                 if non_image_attachments:
-                    warning_reason += '**Message Attachments:**\n'
+                    warning_message += '**Message Attachments:**\n\n'
                     for idx, att in enumerate(non_image_attachments, start=1):
-                        warning_reason += f"{idx}. [Attachment]({att})\n"
+                        warning_message += f"{idx}. [Attachment]({att})\n\n"
 
             if self.message.content:
-                warning_reason += f"**Message Text:** {self.message.content}"
+                warning_message += f"**Message Text:** {self.message.content}"
 
             # await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
             # warning_reason=warning_reason, warning_time=warning_time, rule_number=rule_broken, image=image)
@@ -312,6 +316,7 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                 'interaction': interaction,
                 'warning_moderator': warning_moderator,
                 'warning_reason': warning_reason,
+                'warning_message': warning_message,
                 'warning_time': int(time.time()),
                 'rule_number': rule_broken,
                 'image': image
@@ -337,6 +342,7 @@ COG FOR COMMANDS/SLASH COMMANDS
 class ModCommands(commands.Cog):
     def __init__(self, bot: commands.Cog):
         self.bot = bot
+        self.summon_message_ids = {}
 
     def cog_load(self):
         tree = self.bot.tree
@@ -497,6 +503,20 @@ class ModCommands(commands.Cog):
 
         # If there are no infractions in the database and a thread exists, delete the thread and inform the user.
         if not db_infractions and thread:
+            non_bot_messages = [message async for message in thread.history() if not message.author.bot]
+            if non_bot_messages:
+                async for message in thread.history():
+                    if message.author == bot.user:
+                        await message.delete()
+
+                response_embed = discord.Embed(
+                    description=f'Cleaned thread for <@{member.id}>, did not delete due to user messages in channel.',
+                    color=constants.EMBED_COLOUR_OK)
+
+                await interaction.response.send_message(embed=response_embed, ephemeral=True)
+                return
+
+
             await thread.delete()
             response_embed = discord.Embed(
                 description=f'Thread for <@{member.id}> deleted as no infractions were found in the database.',
@@ -549,13 +569,13 @@ class ModCommands(commands.Cog):
         db_infractions_raw = await find_infraction(member.id, 'warned_user')
         db_infractions = [infraction.to_dictionary() for infraction in db_infractions_raw]
         db_ids = {infraction['entry_id'] for infraction in db_infractions}
-        print(db_ids)
+        # print(db_ids)
         thread_ids = {int(infraction['entry_id']) for infraction in thread_infractions}
-        print(thread_ids)
+        # print(thread_ids)
 
         # Infractions missing in the thread
         missing_in_thread = db_ids - thread_ids
-        print(missing_in_thread)
+        # print(missing_in_thread)
         for itx, infraction in enumerate(db_infractions):
             if infraction['entry_id'] in missing_in_thread:
                 print('MISSING IN THREAD, SENDING...')
@@ -573,7 +593,7 @@ class ModCommands(commands.Cog):
 
         # Infractions present in thread but not in database
         extra_in_thread = thread_ids - db_ids
-        print(extra_in_thread)
+        # print(extra_in_thread)
         if extra_in_thread:
             messages_to_delete = []
             async for message in thread.history():
@@ -593,23 +613,58 @@ class ModCommands(commands.Cog):
         guild = interaction.guild
         evidence_channel = guild.get_channel(channel_evidence())
         mod_role = guild.get_role(role_mod())
+        summon_time = f'<t:{int(time.time())}:t> (<t:{int(time.time())}:R>)'
 
         waiting_embed = discord.Embed(description='🕰️ Summoning a mod...',
                                       color=constants.EMBED_COLOUR_QU)
 
         await interaction.response.send_message(embed=waiting_embed, ephemeral=True)
 
-        # Send summon message to evidence
+        # Fetch the last message in the channel before the summon
+        messages = [message async for message in interaction.channel.history(limit=1) if not message.author.bot]
+        if messages:
+            last_message = messages[0]
+            last_message_url = last_message.jump_url
+        else:
+            last_message_url = "No previous messages found."
+
+        # Send summon message to evidence channel
         alert_embed = discord.Embed(title='📟 A user is requesting a mod',
-                                    description=f'{interaction.user.mention} is requesting a mod in '
-                                          f'{interaction.channel.jump_url}.',
+                                    description=f'{summon_time} {interaction.user.mention} is requesting a mod in '
+                                                f'{interaction.channel.mention}.'
+                                                f'\n\n**Last message before summon:** [Jump to message]({last_message_url})',
                                     color=constants.EMBED_COLOUR_CAUTION)
 
-        await evidence_channel.send(content=f'<@&{role_mod()}>', embed=alert_embed)
+        summon_message = await evidence_channel.send(content=f'<@&{mod_role.id}>', embed=alert_embed)
+        await summon_message.add_reaction('✅')
 
         success_embed = discord.Embed(description='✅ A mod has been pinged', color=constants.EMBED_COLOUR_OK)
 
         await interaction.edit_original_response(embed=success_embed)
+
+        # Store the ID of the summon message for future reference
+        self.summon_message_ids[summon_message.id] = {
+            'summon_time': summon_time,
+            'last_message_url': last_message_url,
+            'channel_mention': interaction.channel.mention
+        }
+
+    # Listener for summon message
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction, user):
+        if reaction.message.id in self.summon_message_ids:
+            # Additional checks: Is the user a mod? Is the reaction on a summon message?
+            if check_roles(any_elevated_role):
+                summon_info = self.summon_message_ids[reaction.message.id]
+                new_embed = discord.Embed(
+                    title='🛡️ A mod is answering the summons',
+                    description=f"{summon_info['summon_time']} {user.mention} is answering the mod summon in "
+                                f"{summon_info['channel_mention']}."
+                                f"\n\n**Last message before summon:** [Jump to message]({summon_info['last_message_url']})",
+                    color=constants.EMBED_COLOUR_OK
+                )
+                self.summon_message_ids.pop(reaction.message.id, None)
+                await reaction.message.edit(embed=new_embed)
 
 
 """
@@ -791,7 +846,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
 
     # Check if message is from Dyno
     dyno = False
-    print(message.author)
+    # print(message.author)
     if message.author.id == dyno_user():
         dyno = True
         print('WARNING FROM DYNO BONK')
@@ -805,7 +860,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
 
     try:
         embed = message.embeds[0]
-        print(embed)
+        # print(embed)
     except IndexError:
         try:
             raise CustomError('Must be run on reports only!')
@@ -896,7 +951,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
 
         # The context is everything after the second '**', so strip() is used to remove whitespace
         reported_context = reported_context_match.group(1).strip() if reported_context_match else None
-        print(reported_context)
+        # print(reported_context)
         content_field = f'**From Dyno**\nWord Hit: {hit_word}\nHit Reason: {hit_reason}\nChannel: <#{reported_channel}>'
         image = None
 
