@@ -196,7 +196,7 @@ WARNING HELPER
 
 async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
                     warning_reason: str, warning_time: int, rule_number: int, original_interaction: discord.Interaction
-                    , image: str = None, send_dm: bool = False):
+                    , warning_message:str, image: str = None, send_dm: bool = False):
     spamchannel = interaction.guild.get_channel(channel_botspam())
     evidence_channel = interaction.guild.get_channel(channel_evidence())
 
@@ -208,7 +208,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
     # handle thread (find if exists, create if not)
     try:
         thread = await find_thread(interaction=interaction, member=warned_user, guild=interaction.guild)
-        print(thread)
+        # print(thread)
 
         if not thread:
             await create_thread(member=warned_user, guild=interaction.guild)
@@ -222,7 +222,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             raise CustomError(f"Error in thread handling: {e}")
         except Exception as e:
             return await on_generic_error(interaction=interaction, error=e)
-
+    warning_reason = f'{warning_reason}\n{warning_message}'
     # Insert infraction into database
     try:
         infraction = await insert_infraction(
@@ -239,7 +239,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         except Exception as e:
             return await on_generic_error(interaction, e)
     color = warning_color(current_infraction_number)
-    print(f'color: {color}')
+    # print(f'color: {color}')
 
     # post infraction to thread
     embed = discord.Embed(
@@ -284,7 +284,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
 
         reason_dm_embed = discord.Embed(
             title='Warning Reason',
-            description=warning_reason,
+            description=warning_message,
             color=constants.EMBED_COLOUR_QU
         )
 
@@ -315,12 +315,18 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         color=constants.EMBED_COLOUR_QU
     )
 
+    announcement_reason_embed = discord.Embed(
+        title='Message',
+        description=f'{warning_message}',
+        color=constants.EMBED_COLOUR_QU
+    )
+
     spam_embed = discord.Embed(
         description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
         color=constants.EMBED_COLOUR_QU
     )
     await spamchannel.send(embed=spam_embed)
-    await evidence_channel.send(embed=announcement_embed)
+    await evidence_channel.send(embeds=[announcement_embed, announcement_reason_embed])
 
     original_interaction_message = await original_interaction.original_response()
 
@@ -368,10 +374,10 @@ async def checkroles_actual(interaction: discord.Interaction, permitted_role_ids
         print(f"checkroles called.")
         author_roles = interaction.user.roles
         permitted_roles = [get_role(interaction, role) for role in permitted_role_ids]
-        print(author_roles)
-        print(permitted_roles)
+        # print(author_roles)
+        # print(permitted_roles)
         permission = True if any(x in permitted_roles for x in author_roles) else False
-        print(f'Permission: {permission}')
+        # print(f'Permission: {permission}')
         return permission, permitted_roles
     except Exception as e:
         print(e)
