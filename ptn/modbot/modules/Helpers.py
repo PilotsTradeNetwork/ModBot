@@ -222,7 +222,8 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             raise CustomError(f"Error in thread handling: {e}")
         except Exception as e:
             return await on_generic_error(interaction=interaction, error=e)
-    warning_reason = f'{warning_reason}\n{warning_message}'
+    if warning_message:
+        warning_reason = f'{warning_reason}\n{warning_message}'
     # Insert infraction into database
     try:
         infraction = await insert_infraction(
@@ -314,19 +315,25 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
                     f'View in <#{thread.id}>',
         color=constants.EMBED_COLOUR_QU
     )
+    if warning_message:
+        announcement_reason_embed = discord.Embed(
+            title='Message',
+            description=f'{warning_message}',
+            color=constants.EMBED_COLOUR_QU
+        )
 
-    announcement_reason_embed = discord.Embed(
-        title='Message',
-        description=f'{warning_message}',
-        color=constants.EMBED_COLOUR_QU
-    )
+        spam_embed = discord.Embed(
+            description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
+            color=constants.EMBED_COLOUR_QU
+        )
+        await evidence_channel.send(embeds=[announcement_embed, announcement_reason_embed])
 
-    spam_embed = discord.Embed(
-        description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
-        color=constants.EMBED_COLOUR_QU
-    )
+    else:
+        await evidence_channel.send(embed=announcement_embed)
+
+
     await spamchannel.send(embed=spam_embed)
-    await evidence_channel.send(embeds=[announcement_embed, announcement_reason_embed])
+
 
     original_interaction_message = await original_interaction.original_response()
 

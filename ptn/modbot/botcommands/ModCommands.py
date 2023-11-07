@@ -276,15 +276,15 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
             if not await rule_check(rule_number=int(str(self.rule_number)), interaction=interaction):
                 return
 
-            warning_reason = "## Infraction Reason\n\n"
+            warning_reason = ''
             warning_message = ''
             if self.warning_description:
-                warning_reason += f"**Warning Reason from Mod:** {self.warning_description}\n\n"
+                warning_reason += f"**Warning reason from Mod:** {self.warning_description}\n"
 
             if self.stickers:
-                warning_message += f'**Message Stickers:** \n\n'
+                warning_message += f'**Message Stickers:** \n'
                 for itx, sticker in enumerate(self.stickers, start=1):
-                    warning_message += f'[Sticker {itx}]({sticker.url})\n\n'
+                    warning_message += f'[Sticker {itx}]({sticker.url})\n'
                 print('Stickers in Message')
 
             if self.attachments:
@@ -296,17 +296,17 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                     if not picture_loaded and is_image_url(url):
                         image = url
                         picture_loaded = True
-                        warning_message += f'**Image Link:** [Image]({url})\n\n'
+                        warning_message += f'\n**Image Link:** [Image]({url})\n'
                     else:
                         non_image_attachments.append(url)
 
                 if non_image_attachments:
-                    warning_message += '**Message Attachments:**\n\n'
+                    warning_message += '\n**Message Attachments:**\n'
                     for idx, att in enumerate(non_image_attachments, start=1):
-                        warning_message += f"{idx}. [Attachment]({att})\n\n"
+                        warning_message += f"{idx}. [Attachment]({att})\n"
 
             if self.message.content:
-                warning_message += f"**Message Text:** {self.message.content}"
+                warning_message += f"\n**Message Text:** {self.message.content}"
 
             # await warn_user(warned_user=warned_user, interaction=interaction, warning_moderator=warning_moderator,
             # warning_reason=warning_reason, warning_time=warning_time, rule_number=rule_broken, image=image)
