@@ -194,8 +194,8 @@ async def find_infraction(searchterm1, searchcolumn1, searchterm2=None, searchco
     infraction_db.execute(sql, tuple(params))
 
     infraction_data = [InfractionData(infraction) for infraction in infraction_db.fetchall()]
-    for infraction in infraction_data:
-        print(infraction)  # calls the __str__ method to print the contents of the instantiated class object
+    # for infraction in infraction_data:
+    #     print(infraction)  # calls the __str__ method to print the contents of the instantiated class object
 
     return infraction_data
 
