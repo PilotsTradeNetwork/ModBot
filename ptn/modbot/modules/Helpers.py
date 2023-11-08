@@ -183,7 +183,7 @@ async def get_rule(rule_number: int, interaction: discord.Interaction, member: d
         await interaction.channel.send(embed=rule)
 
     confirmation_embed = discord.Embed(
-        description=f"✅ Sent rule in <#{interaction.channel}>",
+        description=f"✅ Sent rule in <#{interaction.channel.id}>",
         color=constants.EMBED_COLOUR_OK
     )
     await interaction.response.send_message(embed=confirmation_embed, ephemeral=True)
