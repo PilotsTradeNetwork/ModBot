@@ -17,7 +17,7 @@ from discord.ext import commands
 
 # import constants
 from ptn.modbot._metadata import __version__
-from ptn.modbot.constants import channel_botspam, EMBED_COLOUR_OK
+from ptn.modbot.constants import channel_botspam, EMBED_COLOUR_OK, dev_channel
 
 
 
@@ -42,7 +42,7 @@ class ModBot(commands.Bot):
             print(f'{bot.user.name} version: {__version__} has connected to Discord!')
             print('-----')
             global spamchannel
-            spamchannel = bot.get_channel(channel_botspam())
+            spamchannel = bot.get_channel(dev_channel())
             embed = discord.Embed(
                 title="🟢 MODBOT ONLINE",
                 description=f"🔨<@{bot.user.id}> connected, version **{__version__}**.",
