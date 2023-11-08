@@ -610,48 +610,59 @@ class ModCommands(commands.Cog):
     @app_commands.command(name='summon_mod', description='Summons a mod for help in a channel')
     @can_see_channel(atlas_channel())
     async def summon_mod(self, interaction: discord.Interaction):
+        print(f"Summoned to {interaction.channel} by {interaction.user}")
         guild = interaction.guild
         evidence_channel = guild.get_channel(channel_evidence())
         mod_role = guild.get_role(role_mod())
         summon_time = f'<t:{int(time.time())}:t> (<t:{int(time.time())}:R>)'
 
-        waiting_embed = discord.Embed(description='🕰️ Summoning a mod...',
+        print("⏳ Notifying user")
+        waiting_embed = discord.Embed(description=f'🕰️ Summoning a {mod_role.mention}...',
                                       color=constants.EMBED_COLOUR_QU)
 
         await interaction.response.send_message(embed=waiting_embed, ephemeral=True)
 
+        print("⏳ Fetching channel message...")
         # Fetch the last message in the channel before the summon
-        messages = [message async for message in interaction.channel.history(limit=1) if not message.author.bot]
-        if messages:
-            last_message = messages[0]
-            last_message_url = last_message.jump_url
-        else:
-            last_message_url = "No previous messages found."
+        last_message_url = None
+        try:
+            messages = [message async for message in interaction.channel.history(limit=1) if not message.author.bot]
+            if messages:
+                last_message = messages[0]
+                last_message_url = last_message.jump_url
+                last_message_link = f"[Jump to message]({last_message_url})"
+            else:
+                last_message_link = "No previous messages found."
+        except:
+            last_message_link = "No previous messages found."
 
+        print("▶ Sending to mod-evidence")
         # Send summon message to evidence channel
         alert_embed = discord.Embed(title='📟 A user is requesting a mod',
                                     description=f'{summon_time} {interaction.user.mention} is requesting a mod in '
                                                 f'{interaction.channel.mention}.'
-                                                f'\n\n**Last message before summon:** [Jump to message]({last_message_url})',
+                                                f'\n\n**Last message before summon:** {last_message_link}',
                                     color=constants.EMBED_COLOUR_CAUTION)
-
-        summon_message = await evidence_channel.send(content=f'<@&{mod_role.id}>', embed=alert_embed)
+        summon_message_content = f'<@&{mod_role.id}>: summoned to {interaction.channel.mention} by {interaction.user.mention}'
+        summon_message = await evidence_channel.send(content=summon_message_content, embed=alert_embed)
         await summon_message.add_reaction('✅')
 
-        success_embed = discord.Embed(description='✅ A mod has been pinged', color=constants.EMBED_COLOUR_OK)
+        success_embed = discord.Embed(description=f'✅ A {mod_role.mention} has been summoned.', color=constants.EMBED_COLOUR_OK)
 
+        print("▶ Updating status for user")
         await interaction.edit_original_response(embed=success_embed)
 
         # Store the ID of the summon message for future reference
         self.summon_message_ids[summon_message.id] = {
             'summon_time': summon_time,
             'last_message_url': last_message_url,
+            'last_message_link': last_message_link,
             'channel_mention': interaction.channel.mention
         }
 
     # Listener for summon message
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
+    async def on_reaction_add(self, reaction:discord.Reaction, user: discord.User):
         if reaction.message.id in self.summon_message_ids:
             # Additional checks: Is the user a mod? Is the reaction on a summon message?
             if check_roles(any_elevated_role):
@@ -660,7 +671,7 @@ class ModCommands(commands.Cog):
                     title='🛡️ A mod is answering the summons',
                     description=f"{summon_info['summon_time']} {user.mention} is answering the mod summon in "
                                 f"{summon_info['channel_mention']}."
-                                f"\n\n**Last message before summon:** [Jump to message]({summon_info['last_message_url']})",
+                                f"\n\n**Last message before summon:** [Jump to message]({summon_info['last_message_link']})",
                     color=constants.EMBED_COLOUR_OK
                 )
                 self.summon_message_ids.pop(reaction.message.id, None)
@@ -795,7 +806,8 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         color=constants.EMBED_COLOUR_OK
     )
 
-    await evidence_channel.send(embed=embed, content=f'{mod_role.mention}')
+    evidence_message_content = f'{mod_role.mention}: report in {interaction.channel.mention} from {interaction.user.mention}'
+    await evidence_channel.send(embed=embed, content=evidence_message_content)
 
     '''Message deletion - Unimplemented'''
     # if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:

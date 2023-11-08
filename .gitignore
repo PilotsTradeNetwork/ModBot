@@ -175,3 +175,5 @@ test.py
 
 # secrets
 ptn/modbot/.env
+.env
+ptn/modbot/data/.env
