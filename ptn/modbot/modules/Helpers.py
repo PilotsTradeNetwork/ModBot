@@ -92,6 +92,14 @@ async def display_infractions(interaction: discord.Interaction, member: discord.
         if thread:
             embed.description = f'Thread: <#{thread.id}>'
 
+        else:
+            no_infractions = discord.Embed(
+                description='User has no infractions on record.',
+                color=constants.EMBED_COLOUR_QU
+            )
+            await interaction.response.send_message(embed=no_infractions)
+            return
+
         # display infractions as a list
         if not infractions:
             embed.description = embed.description + "\nUser has no infractions on record."
