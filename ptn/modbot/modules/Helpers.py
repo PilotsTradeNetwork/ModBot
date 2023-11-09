@@ -196,7 +196,7 @@ WARNING HELPER
 
 async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
                     warning_reason: str, warning_time: int, rule_number: int, original_interaction: discord.Interaction
-                    , warning_message:str, image: str = None, send_dm: bool = False):
+                    , warning_message: str, image: str = None, send_dm: bool = False):
     spamchannel = interaction.guild.get_channel(channel_botspam())
     evidence_channel = interaction.guild.get_channel(channel_evidence())
 
@@ -322,18 +322,17 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             color=constants.EMBED_COLOUR_QU
         )
 
-        spam_embed = discord.Embed(
-            description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
-            color=constants.EMBED_COLOUR_QU
-        )
         await evidence_channel.send(embeds=[announcement_embed, announcement_reason_embed])
 
     else:
         await evidence_channel.send(embed=announcement_embed)
 
+    spam_embed = discord.Embed(
+        description=f'A new infraction was created for {warned_user.mention} by {warning_moderator.mention}',
+        color=constants.EMBED_COLOUR_QU
+    )
 
     await spamchannel.send(embed=spam_embed)
-
 
     original_interaction_message = await original_interaction.original_response()
 
@@ -466,3 +465,26 @@ def is_in_channel(channel_id):
         return True
 
     return commands.check(predicate)
+
+
+def edit_warning_reason(reason, new_reason):
+    """
+    Edits the warning reason in a structured message infraction.
+
+    :param str message_infraction: The original message containing the infraction details.
+    :param str new_reason: The new reason to replace the old one.
+    :returns: The updated message infraction string.
+    """
+
+    # Split the message by lines
+    lines = reason.split('\n')
+    for i, line in enumerate(lines):
+        # Check if the line contains the warning reason
+        if line.startswith('**Warning Reason from Mod:**'):
+            # Replace the line with the new reason
+            lines[i] = f'**Warning Reason from Mod:** {new_reason}'
+            break  # Stop the loop after finding and replacing the line
+
+    # Join the lines back into a single string
+    updated_message_infraction = '\n'.join(lines)
+    return updated_message_infraction
