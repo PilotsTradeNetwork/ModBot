@@ -692,7 +692,7 @@ class ModCommands(commands.Cog):
 
         # Search for messages from Dyno with a matching ID in the footer
         matching_messages = []
-        messages = [message async for message in interaction.channel.history() if message.author.id == dyno_user()]
+        messages = [message async for message in interaction.channel.history(limit=None) if message.author.id == dyno_user()]
         for history_message in messages:  # Be cautious with limit=None
                 for embed in history_message.embeds:
                     if embed.footer and 'ID: ' + original_id in embed.footer.text:
