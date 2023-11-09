@@ -680,7 +680,7 @@ class ModCommands(commands.Cog):
     @check_roles(constants.any_elevated_role)
     @is_in_channel(channel_evidence())
     async def search_dyno(self, interaction: discord.Interaction, member: discord.Member):
-
+        print(f'search_dyno called by {interaction.user.display_name}')
         wait_embed = discord.Embed(
             description='Searching for Dyno Bonks, this may take a few moments...',
             color=constants.EMBED_COLOUR_QU
@@ -692,11 +692,16 @@ class ModCommands(commands.Cog):
 
         # Search for messages from Dyno with a matching ID in the footer
         matching_messages = []
-        async for history_message in interaction.channel.history(limit=None):  # Be cautious with limit=None
+        messages = [message async for message in interaction.channel.history(limit=None, oldest_first=False)
+                    if message.author.id == dyno_user()]
+        for history_message in messages:
             if history_message.author.id == dyno_user() and history_message.embeds:
                 for embed in history_message.embeds:
                     if embed.footer and 'ID: ' + original_id in embed.footer.text:
-                        matching_messages.append(history_message)
+                        for line in embed.description.split('\n'):
+                            pattern = r"\*\*Message sent by <@\d+> deleted in <#\d+>\*\*"
+                            if bool(re.match(pattern, line)):
+                                matching_messages.append(history_message)
 
         if matching_messages:
             report_embed = discord.Embed(
@@ -706,16 +711,20 @@ class ModCommands(commands.Cog):
             matching_messages.reverse()
 
             for itx, message in enumerate(matching_messages, start=1):
-                embed = message.embeds[0]
-                description = embed.description
-                reason = embed.fields[0].value
-                detailed_reason = embed.fields[1].value
+                try:
+                    embed = message.embeds[0]
+                    description = embed.description
+                    reason = embed.fields[0].value
+                    detailed_reason = embed.fields[1].value
 
-                report_embed.add_field(
-                    name=f'Hit #{itx}',
-                    value=f'{description}\nReason: {reason} | Detailed Reason: {detailed_reason}\n',
-                    inline=False
-                )
+                    report_embed.add_field(
+                        name=f'Hit #{itx}',
+                        value=f'{description}\nReason: {reason} | Detailed Reason: {detailed_reason}\n',
+                        inline=False
+                    )
+                except Exception as e:
+                    print(f'Error in embed addition: {e}')
+                    continue
 
             await interaction.edit_original_response(embed=report_embed)
 
