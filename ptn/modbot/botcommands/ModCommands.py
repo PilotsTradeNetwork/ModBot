@@ -681,6 +681,13 @@ class ModCommands(commands.Cog):
     @is_in_channel(channel_evidence())
     async def search_dyno(self, interaction: discord.Interaction, member: discord.Member):
 
+        wait_embed = discord.Embed(
+            description='Searching for Dyno Bonks, this may take a few moments...',
+            color=constants.EMBED_COLOUR_QU
+        )
+
+        await interaction.response.send_message(embed=wait_embed,
+                                                ephemeral=True)
         original_id = str(member.id)
 
         # Search for messages from Dyno with a matching ID in the footer
@@ -710,14 +717,14 @@ class ModCommands(commands.Cog):
                     inline=False
                 )
 
-            await interaction.response.send_message(embed=report_embed)
+            await interaction.edit_original_response(embed=report_embed)
 
         else:
             report_embed = discord.Embed(
                 description='ℹ️ No previous hits found',
                 color=constants.EMBED_COLOUR_QU
             )
-            await interaction.response.send_message(embed=report_embed)
+            await interaction.edit_original_response(embed=report_embed)
 
 
 """
