@@ -711,20 +711,19 @@ class ModCommands(commands.Cog):
             matching_messages.reverse()
 
             for itx, message in enumerate(matching_messages, start=1):
+                embed = message.embeds[0]
+                description = embed.description
+                reason = embed.fields[0].value
                 try:
-                    embed = message.embeds[0]
-                    description = embed.description
-                    reason = embed.fields[0].value
                     detailed_reason = embed.fields[1].value
+                except:
+                    detailed_reason = 'None Given'
 
-                    report_embed.add_field(
-                        name=f'Hit #{itx}',
-                        value=f'{description}\nReason: {reason} | Detailed Reason: {detailed_reason}\n',
-                        inline=False
-                    )
-                except Exception as e:
-                    print(f'Error in embed addition: {e}')
-                    continue
+                report_embed.add_field(
+                    name=f'Hit #{itx}',
+                    value=f'{description}\nReason: {reason} | Detailed Reason: {detailed_reason}\n',
+                    inline=False
+                )
 
             await interaction.edit_original_response(embed=report_embed)
 
