@@ -21,13 +21,13 @@ from ptn.modbot.constants import role_council, role_mod, channel_evidence, \
     channel_botspam, forum_channel, dyno_user, atlas_channel, any_elevated_role
 
 # import database functions
-from ptn.modbot.database.database import find_infraction, delete_single_warning
+from ptn.modbot.database.database import find_infraction, delete_single_warning, edit_infraction
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
     get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
-    warning_color, is_in_channel
+    warning_color, is_in_channel, edit_warning_reason
 
 """
 A primitive global error handler for text commands.
@@ -516,7 +516,6 @@ class ModCommands(commands.Cog):
                 await interaction.response.send_message(embed=response_embed, ephemeral=True)
                 return
 
-
             await thread.delete()
             response_embed = discord.Embed(
                 description=f'Thread for <@{member.id}> deleted as no infractions were found in the database.',
@@ -855,7 +854,6 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
 @is_in_channel(channel_evidence())
 @check_roles(constants.any_elevated_role)
 async def report_to_warn(interaction: discord.Interaction, message: discord.Message):
-
     # Check if message is from Dyno
     dyno = False
     # print(message.author)
@@ -1004,3 +1002,92 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                     return await on_generic_error(interaction, e)
 
     await interaction.response.send_modal(RuleModal())
+
+
+@bot.tree.context_menu(name='Edit Infraction')
+@check_roles(constants.any_elevated_role)
+async def edit_infraction_command(interaction: discord.Interaction, message: discord.Message):
+    channel = interaction.channel
+    is_thread = (interaction.channel.parent_id == forum_channel() and isinstance(channel, discord.Thread))
+
+    if not is_thread:
+        try:
+            raise CustomError('Must be run in a thread!')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    try:
+        infraction_embed = message.embeds[0]
+        infraction_entry = int(infraction_embed.fields[4].value)
+    except IndexError:
+        try:
+            raise CustomError(f'Must be on an infraction message.')
+        except Exception as e:
+            return await on_generic_error(interaction, e)
+
+    reason_field = infraction_embed.fields[2].value
+
+    message_infraction = False
+    for line in reason_field.split('\n'):
+        if line.startswith('**Warning Reason from Mod:**'):
+            mod_line = line.split(':**')[1].strip(' ')
+            message_infraction = True
+            break
+
+    class EditInfractionModal(ui.Modal, title='Edit Infraction'):
+        def __init__(self):
+            super().__init__()
+
+        if message_infraction:
+            reason_message = ui.TextInput(
+                label='Change Reason',
+                default=mod_line
+            )
+            rule_broken = ui.TextInput(
+                label='Rule Broken',
+                default=infraction_embed.fields[3].value
+            )
+
+        else:
+            reason_full = ui.TextInput(
+                label='Change Reason',
+                default=infraction_embed.fields[2].value
+            )
+            rule_broken = ui.TextInput(
+                label='Rule Broken',
+                default=infraction_embed.fields[3].value
+            )
+
+        async def on_submit(self, interaction: discord.Interaction):
+            if message_infraction:
+                updated_reason = edit_warning_reason(reason_field, str(self.reason_message))
+                updated_rule = int(str(self.rule_broken))
+
+            else:
+                updated_reason = str(self.reason_full)
+                updated_rule = int(str(self.rule_broken))
+
+            # Update database
+            await edit_infraction(entry_id=infraction_entry, rule_broken=updated_rule, warning_reason=updated_reason)
+
+            # Update embed
+            infraction_embed_dict = infraction_embed.to_dict()
+            for field in infraction_embed_dict['fields']:
+                if field['name'] == 'Reason':
+                    field['value'] = updated_reason
+
+                if field['name'] == 'Rule Broken':
+                    field['value'] = str(updated_rule)
+
+            new_embed = discord.Embed.from_dict(infraction_embed_dict)
+
+            await message.edit(embed=new_embed)
+
+            confirmation_embed = discord.Embed(
+                description='✅ Updated infraction successfully!',
+                color=constants.EMBED_COLOUR_OK
+            )
+
+            await interaction.response.send_message(embed=confirmation_embed, ephemeral=True)
+
+    await interaction.response.send_modal(EditInfractionModal())
