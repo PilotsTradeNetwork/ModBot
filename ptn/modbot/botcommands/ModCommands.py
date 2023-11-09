@@ -680,7 +680,7 @@ class ModCommands(commands.Cog):
     @check_roles(constants.any_elevated_role)
     @is_in_channel(channel_evidence())
     async def search_dyno(self, interaction: discord.Interaction, member: discord.Member):
-
+        print(f'search_dyno called by {interaction.user.display_name}')
         wait_embed = discord.Embed(
             description='Searching for Dyno Bonks, this may take a few moments...',
             color=constants.EMBED_COLOUR_QU
@@ -692,8 +692,8 @@ class ModCommands(commands.Cog):
 
         # Search for messages from Dyno with a matching ID in the footer
         matching_messages = []
-        async for history_message in interaction.channel.history(limit=None):  # Be cautious with limit=None
-            if history_message.author.id == dyno_user() and history_message.embeds:
+        messages = [message async for message in interaction.channel.history() if message.author.id == dyno_user()]
+        for history_message in messages:  # Be cautious with limit=None
                 for embed in history_message.embeds:
                     if embed.footer and 'ID: ' + original_id in embed.footer.text:
                         matching_messages.append(history_message)
