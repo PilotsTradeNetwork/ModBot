@@ -686,13 +686,18 @@ class ModCommands(commands.Cog):
             color=constants.EMBED_COLOUR_QU
         )
 
+        joined_at = member.joined_at
+
+        print(f'Searching for messages after {joined_at}')
+
         await interaction.response.send_message(embed=wait_embed,
                                                 ephemeral=True)
         original_id = str(member.id)
 
         # Search for messages from Dyno with a matching ID in the footer
         matching_messages = []
-        messages = [message async for message in interaction.channel.history(limit=None, oldest_first=False)
+        messages = [message async for message in interaction.channel.history(limit=None, oldest_first=False,
+                                                                             after=joined_at)
                     if message.author.id == dyno_user()]
         for history_message in messages:
             if history_message.author.id == dyno_user() and history_message.embeds:
