@@ -266,3 +266,68 @@ async def insert_infraction(warned_user, warning_moderator, warning_time, rule_b
 
     print(f"Infraction inserted with entry ID {entry_id}.")
     return entry_id
+
+
+async def edit_infraction(entry_id, warned_user=None, warning_moderator=None, warning_time=None, rule_broken=None,
+                          warning_reason=None, thread_id=None):
+    """
+    Edits an existing infraction in the infractions table.
+
+    :param int entry_id: ID of the infraction entry to be edited
+    :param int warned_user: (Optional) New ID of the user being warned
+    :param int warning_moderator: (Optional) New ID of the moderator issuing the warning
+    :param int warning_time: (Optional) New Unix timestamp of when the warning was issued
+    :param int rule_broken: (Optional) New ID of the rule broken, if any
+    :param str warning_reason: (Optional) New reason for the warning
+    :param int thread_id: (Optional) New thread ID, if any
+    :returns: True if the infraction was successfully updated, False otherwise
+    :rtype: bool
+    """
+
+    print(f"Editing infraction with entry ID {entry_id}.")
+
+    try:
+        await infraction_db_lock.acquire()
+
+        # Prepare the SET part of the SQL command
+        updates = []
+        parameters = []
+        if warned_user is not None:
+            updates.append("warned_user = ?")
+            parameters.append(warned_user)
+        if warning_moderator is not None:
+            updates.append("warning_moderator = ?")
+            parameters.append(warning_moderator)
+        if warning_time is not None:
+            updates.append("warning_time = ?")
+            parameters.append(warning_time)
+        if rule_broken is not None:
+            updates.append("rule_broken = ?")
+            parameters.append(rule_broken)
+        if warning_reason is not None:
+            updates.append("warning_reason = ?")
+            parameters.append(warning_reason)
+        if thread_id is not None:
+            updates.append("thread_id = ?")
+            parameters.append(thread_id)
+
+        set_command = ", ".join(updates)
+        parameters.append(entry_id)
+
+        # Check if there is anything to update
+        if not updates:
+            print("No updates provided.")
+            return False
+
+        # Execute the update command
+        infraction_db.execute(
+            f"UPDATE infractions SET {set_command} WHERE entry_id = ?",
+            tuple(parameters)
+        )
+        infraction_conn.commit()
+
+    finally:
+        infraction_db_lock.release()
+
+    print("Infraction updated.")
+    return True
