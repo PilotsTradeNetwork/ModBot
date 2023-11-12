@@ -646,7 +646,8 @@ class ModCommands(commands.Cog):
         summon_message = await evidence_channel.send(content=summon_message_content, embed=alert_embed)
         await summon_message.add_reaction('✅')
 
-        success_embed = discord.Embed(description=f'✅ A {mod_role.mention} has been summoned.', color=constants.EMBED_COLOUR_OK)
+        success_embed = discord.Embed(description=f'✅ A {mod_role.mention} has been summoned.',
+                                      color=constants.EMBED_COLOUR_OK)
 
         print("▶ Updating status for user")
         await interaction.edit_original_response(embed=success_embed)
@@ -661,7 +662,7 @@ class ModCommands(commands.Cog):
 
     # Listener for summon message
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction:discord.Reaction, user: discord.User):
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
         if reaction.message.id in self.summon_message_ids:
             # Additional checks: Is the user a mod? Is the reaction on a summon message?
             if check_roles(any_elevated_role):
@@ -686,13 +687,18 @@ class ModCommands(commands.Cog):
             color=constants.EMBED_COLOUR_QU
         )
 
+        joined_at = member.joined_at
+
+        print(f'Searching for messages after {joined_at}')
+
         await interaction.response.send_message(embed=wait_embed,
                                                 ephemeral=True)
         original_id = str(member.id)
 
         # Search for messages from Dyno with a matching ID in the footer
         matching_messages = []
-        messages = [message async for message in interaction.channel.history(limit=None, oldest_first=False)
+        messages = [message async for message in interaction.channel.history(limit=None, oldest_first=False,
+                                                                             after=joined_at)
                     if message.author.id == dyno_user()]
         for history_message in messages:
             if history_message.author.id == dyno_user() and history_message.embeds:
@@ -786,7 +792,7 @@ async def infraction_message(interaction: discord.Interaction, message: discord.
 
 
 @bot.tree.context_menu(name='Report to Mods')
-@can_see_channel(constants.privlidged_channel())
+@can_see_channel(constants.atlas_channel())
 async def report_to_moderation(interaction: discord.Interaction, message: discord.Message):
     reporting_user = interaction.user
     reporting_user_roles = [role.id for role in reporting_user.roles]
@@ -803,6 +809,10 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
             raise CustomError('You cannot report bot messages.')
         except Exception as e:
             return await on_generic_error(interaction, e)
+
+    mod = False
+    if role_mod() in reporting_user_roles or role_council() in reporting_user_roles:
+        mod = True
 
     '''Somm check - Unimplemented'''
     # if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
@@ -824,8 +834,9 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         timestamp=report_time,
         color=constants.EMBED_COLOUR_QU
     )
-
-    report_message = f'Message Link: {message.jump_url}\n'
+    report_message = ''
+    if not mod:
+        report_message += f'Message Link: {message.jump_url}\n'
 
     if message.content:
         report_message += f"Message Text: {message.clean_content}\n"
@@ -863,13 +874,16 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         color=constants.EMBED_COLOUR_OK
     )
 
-    evidence_message_content = f'{mod_role.mention}: report in {interaction.channel.mention} from {interaction.user.mention}'
+    if not mod:
+        evidence_message_content = f'{mod_role.mention}: report in {interaction.channel.mention} from {interaction.user.mention}'
+
+    else:
+        evidence_message_content = f'Report in {interaction.channel.mention} from {interaction.user.mention}'
+
     await evidence_channel.send(embed=embed, content=evidence_message_content)
 
-    '''Message deletion - Unimplemented'''
-    # if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
-    #     if interaction.channel.category.id in bc_categories():
-    #         await message.delete()
+    if mod:
+        await message.delete()
 
     await interaction.response.send_message(embed=response_embed, ephemeral=True)
 
