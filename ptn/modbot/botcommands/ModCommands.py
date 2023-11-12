@@ -811,7 +811,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
             return await on_generic_error(interaction, e)
 
     mod = False
-    if check_roles(any_elevated_role):
+    if role_mod() in reporting_user_roles or role_council() in reporting_user_roles:
         mod = True
 
     '''Somm check - Unimplemented'''
@@ -879,6 +879,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 
     else:
         evidence_message_content = f'Report in {interaction.channel.mention} from {interaction.user.mention}'
+
     await evidence_channel.send(embed=embed, content=evidence_message_content)
 
     if mod:
