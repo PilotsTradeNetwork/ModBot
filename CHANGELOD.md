@@ -1,5 +1,18 @@
 # Changelog
-
+## 1.2.5
+- Removed search ability for dyno search for members over a year old, now gives embed with search text for search bar
+## 1.2.4
+- Allowed Atlas to use Report to Mods
+- Removed mod ping and added removal of message for mods to Report to Mods
+## 1.2.3
+- Added time range to dyno search
+## 1.2.2
+- Fixed all dyno search bugs
+## 1.2.0
+- Added search function for dyno hits
+## 1.1.0
+- Added Edit function to infractions
+- Fixed spam embed not posting upon warning
 
 ## 1.0.4
 - Corrected testing data path to ptn/modbot/data
