@@ -1,7 +1,7 @@
 # discord.py
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # import discord
 import discord
@@ -686,8 +686,18 @@ class ModCommands(commands.Cog):
             description='Searching for Dyno Bonks, this may take a few moments...',
             color=constants.EMBED_COLOUR_QU
         )
+        evidence_channel = interaction.guild.get_channel(channel_evidence())
 
-        joined_at = member.joined_at
+        joined_at = member.joined_at.replace(tzinfo=None)
+        over_a_year = joined_at < (datetime.now().replace(tzinfo=None) - timedelta(days=365))
+        search = f'in:{evidence_channel.name} ID: {member.id}'
+        if over_a_year:
+            print('User is over a year old, sending discord search text')
+            embed = discord.Embed(description=f'⚠️ User has been in the server for over a year, use this search instead:\n'
+                                              + f'`{search}`',
+                                  color=constants.EMBED_COLOUR_CAUTION)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
 
         print(f'Searching for messages after {joined_at}')
 
@@ -730,6 +740,7 @@ class ModCommands(commands.Cog):
                     value=f'{description}\nReason: {reason} | Detailed Reason: {detailed_reason}\n',
                     inline=False
                 )
+                report_embed.set_footer(text=search)
 
             await interaction.edit_original_response(embed=report_embed)
 
@@ -738,6 +749,7 @@ class ModCommands(commands.Cog):
                 description='ℹ️ No previous hits found',
                 color=constants.EMBED_COLOUR_QU
             )
+            report_embed.set_footer(text=search)
             await interaction.edit_original_response(embed=report_embed)
 
 
