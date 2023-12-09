@@ -97,7 +97,7 @@ async def display_infractions(interaction: discord.Interaction, member: discord.
                 description='User has no infractions on record.',
                 color=constants.EMBED_COLOUR_QU
             )
-            await interaction.response.send_message(embed=no_infractions)
+            await interaction.response.send_message(embed=no_infractions, ephemeral=True)
             return
 
         # display infractions as a list
