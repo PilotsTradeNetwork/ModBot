@@ -953,7 +953,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
             return await on_generic_error(interaction, e)
 
     try:
-        embed = message.embeds[0]
+        dyno_embed = message.embeds[0]
         # print(embed)
     except IndexError:
         try:
@@ -964,7 +964,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
     # If message is from ModBot
     if not dyno:
         try:
-            content_field = embed.fields[0].value
+            content_field = dyno_embed.fields[0].value
         except:
             try:
                 raise CustomError('Must be run on reports only!')
@@ -974,12 +974,12 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         # Get the link to the message
         pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
         content_field = re.sub(pattern, '', content_field)
-        report_info = embed.description
+        report_info = dyno_embed.description
         image = None
 
         # Get image if it is in report
-        if embed.image:
-            image = embed.image.url
+        if dyno_embed.image:
+            image = dyno_embed.image.url
 
         # Get the ids for the reporter, the reported, and the channel which the id is from
         numbers = re.findall(r'<[@#](\d+)>', report_info)
@@ -1008,8 +1008,8 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
 
     else:
-        fields = embed.fields
-        main_content = embed.description
+        fields = dyno_embed.fields
+        main_content = dyno_embed.description
 
         header_pattern = re.compile(r"<@\d+>.*<#\d+>\*\*")
         if not bool(header_pattern.search(main_content)):
@@ -1077,8 +1077,10 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                     description='DMing the member is disabled by default, this is for if the infraction '
                                 'requires manual intervention.', color=constants.EMBED_COLOUR_QU)
                 await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
+
                                                         ephemeral=True, embed=embed)
-                await message.delete()
+                if not dyno:
+                    await message.delete()
             except Exception as e:
                 try:
                     raise CustomError(f'Could not warn from report! `{e}`')
