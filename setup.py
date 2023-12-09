@@ -37,7 +37,7 @@ setup(
     author='Charles Tosh',
     url='',
     install_requires=[
-        'aiohttp==3.8.6',
+        'aiohttp==3.9.0',
         'aiosignal==1.3.1',
         'async-timeout==4.0.3',
         'attrs==23.1.0',
