@@ -29,40 +29,6 @@ from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rul
     get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
     warning_color, is_in_channel, edit_warning_reason
 
-"""
-A primitive global error handler for text commands.
-
-returns: error message to user and log
-"""
-
-
-@bot.listen()
-async def on_command_error(ctx, error):
-    print(error)
-    if isinstance(error, commands.BadArgument):
-        message = f'Bad argument: {error}'
-
-    elif isinstance(error, commands.CommandNotFound):
-        message = f"Sorry, were you talking to me? I don't know that command."
-
-    elif isinstance(error, commands.MissingRequiredArgument):
-        message = f"Sorry, that didn't work.\n• Check you've included all required arguments." \
-                  "\n• If using quotation marks, check they're opened *and* closed, and are in the proper place.\n• Check quotation" \
-                  " marks are of the same type, i.e. all straight or matching open/close smartquotes."
-
-    elif isinstance(error, commands.MissingPermissions):
-        message = 'Sorry, you\'re missing the required permission for this command.'
-
-    elif isinstance(error, commands.MissingAnyRole):
-        message = f'You require one of the following roles to use this command:\n<@&{role_council()}> • <@&{role_mod()}>'
-
-    else:
-        message = f'Sorry, that didn\'t work: {error}'
-
-    embed = discord.Embed(description=f"❌ {message}", color=constants.EMBED_COLOUR_ERROR)
-    await ctx.send(embed=embed)
-
-
 '''
 MODALS FOR WARNS
 '''
@@ -82,7 +48,7 @@ class InfractionReport(ui.Modal, title='Warn User'):
 
     rule_number = ui.TextInput(
         label='Rule Broken',
-        placeholder='Number (i.e. \'1\') of the rule broken...',
+        placeholder='Number (i.e. \'1\') of the rule broken... | Tow truck is rule 6',
         required=True
     )
     warning_reason = ui.TextInput(
@@ -938,9 +904,9 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
 @is_in_channel(channel_evidence())
 @check_roles(constants.any_elevated_role)
 async def report_to_warn(interaction: discord.Interaction, message: discord.Message):
+
     # Check if message is from Dyno
     dyno = False
-    # print(message.author)
     if message.author.id == dyno_user():
         dyno = True
         print('WARNING FROM DYNO BONK')
@@ -952,9 +918,9 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         except Exception as e:
             return await on_generic_error(interaction, e)
 
+    # check and get dyno embed
     try:
-        embed = message.embeds[0]
-        # print(embed)
+        dyno_embed = message.embeds[0]
     except IndexError:
         try:
             raise CustomError('Must be run on reports only!')
@@ -964,7 +930,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
     # If message is from ModBot
     if not dyno:
         try:
-            content_field = embed.fields[0].value
+            content_field = dyno_embed.fields[0].value
         except:
             try:
                 raise CustomError('Must be run on reports only!')
@@ -974,12 +940,12 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         # Get the link to the message
         pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
         content_field = re.sub(pattern, '', content_field)
-        report_info = embed.description
+        report_info = dyno_embed.description
         image = None
 
         # Get image if it is in report
-        if embed.image:
-            image = embed.image.url
+        if dyno_embed.image:
+            image = dyno_embed.image.url
 
         # Get the ids for the reporter, the reported, and the channel which the id is from
         numbers = re.findall(r'<[@#](\d+)>', report_info)
@@ -1008,8 +974,8 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
 
     else:
-        fields = embed.fields
-        main_content = embed.description
+        fields = dyno_embed.fields
+        main_content = dyno_embed.description
 
         header_pattern = re.compile(r"<@\d+>.*<#\d+>\*\*")
         if not bool(header_pattern.search(main_content)):
@@ -1046,7 +1012,8 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         # The context is everything after the second '**', so strip() is used to remove whitespace
         reported_context = reported_context_match.group(1).strip() if reported_context_match else None
         # print(reported_context)
-        content_field = f'**From Dyno**\nWord Hit: {hit_word}\nHit Reason: {hit_reason}\nChannel: <#{reported_channel}>'
+        content_field = f'**From Dyno**\nWord Hit: {hit_word}\nHit Reason: {hit_reason}\nChannel: <#{reported_channel}>' \
+                        f'\nLink to hit: {message.jump_url}'
         image = None
 
     # Modal for rule number reporting
@@ -1077,8 +1044,10 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                     description='DMing the member is disabled by default, this is for if the infraction '
                                 'requires manual intervention.', color=constants.EMBED_COLOUR_QU)
                 await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
+
                                                         ephemeral=True, embed=embed)
-                await message.delete()
+                if not dyno:
+                    await message.delete()
             except Exception as e:
                 try:
                     raise CustomError(f'Could not warn from report! `{e}`')

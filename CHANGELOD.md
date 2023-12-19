@@ -1,4 +1,6 @@
 # Changelog
+## 1.2.6
+- Removed deletion of Dyno hits
 ## 1.2.5
 - Removed search ability for dyno search for members over a year old, now gives embed with search text for search bar
 ## 1.2.4

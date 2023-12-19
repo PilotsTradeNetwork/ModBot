@@ -19,6 +19,7 @@ from ptn.modbot.classes.InfractionData import InfractionData
 # local constants
 import ptn.modbot.constants as constants
 from ptn.modbot.bot import bot
+from ptn.modbot.classes.TowTruckData import TowTruckData
 
 """
 STARTUP FUNCTIONS
@@ -50,7 +51,8 @@ def build_database_on_startup():
         #       obj (sqlite db obj): sqlite connection to db
         #       create (str): sql create statement for table
         database_table_map = {
-            'infractions': {'obj': infraction_db, 'create': infractions_table_create}
+            'infractions': {'obj': infraction_db, 'create': infractions_table_create},
+            'tow_truck': {'obj': infraction_db, 'create': tow_truck_table_create}
         }
 
         # check database exists, create from scratch if needed
@@ -77,6 +79,18 @@ infractions_table_create = '''
     )
     '''
 
+tow_truck_table_create = '''
+    CREATE TABLE tow_truck(
+        entry_id INTEGER NOT NULL PRIMARY KEY,
+        carrier_name TEXT NOT NULL,
+        carrier_id TEXT NOT NULL UNIQUE,
+        carrier_position TEXT NOT NULL,
+        in_game_carrier_owner TEXT NOT NULL,
+        discord_user INTEGER,
+        user_roles TEXT
+    )   
+'''
+
 
 # enumerate infraction database columns
 class InfractionDbFields(enum.Enum):
@@ -87,6 +101,16 @@ class InfractionDbFields(enum.Enum):
     rule_broken = "rule_broken"
     warning_reason = "warning_reason"
     thread_id = "thread_id"
+
+
+class CarrierDbFields(enum.Enum):
+    entry_id = "entry_id"
+    carrier_name = "carrier_name"
+    carrier_id = "carrier_id"
+    carrier_position = "carrier_position"
+    in_game_carrier_owner = "in_game_carrier_owner"
+    discord_user = "discord_user"
+    user_roles = "user_roles"
 
 
 # list of infractions table columns
@@ -146,11 +170,22 @@ infraction_db_lock = asyncio.Lock()
 """
 DATABASE EDIT FUNCTIONS
 
+-- Infraction Table --
+- Add infraction: insert_infraction
 - Search database by warned user ID: find_infraction
 - Search database by entry ID: find_infraction
 - Remove warning from database: delete_single_warning
 - Remove all warnings for a user from database: delete_all_warnings_for_user
+- Edit single infraction object: insert_infraction
+
+-- Carrier Table --
+- Search database by carrier ID: find_carrier
+- Search database by discord ID: find_carrier
+- Remove tracked carrier from database: delete_carrier
+- Add carrier to the database: insert_carrier
 """
+
+''' -- Infractions Table --'''
 
 
 # find an infraction in the db
@@ -331,3 +366,91 @@ async def edit_infraction(entry_id, warned_user=None, warning_moderator=None, wa
 
     print("Infraction updated.")
     return True
+
+
+''' -- Tow Truck Table -- '''
+
+
+async def insert_carrier(carrier_name: str, carrier_id: str, carrier_position: str, in_game_carrier_owner: str,
+                         discord_user: int = None, user_roles: str = None):
+    """
+    Inserts a new carrier into the tow truck table
+    """
+    print(f'Inserting infraction for carrier {carrier_name} ({carrier_id})')
+
+    try:
+        await infraction_db_lock.acquire()
+
+        infraction_db.execute(
+            f"INSERT INTO tow_truck (carrier_name, carrier_id, carrier_position, in_game_carrier_owner, discord_user, "
+            f"user_roles) VALUES (?, ?, ?, ?, ?, ?)",
+            (carrier_name, carrier_id, carrier_position, in_game_carrier_owner, discord_user, user_roles)
+        )
+
+        infraction_conn.commit()
+
+    finally:
+        infraction_db_lock.release()
+
+    print(f"Carrier {carrier_id} inserted into database")
+
+
+async def find_carrier(searchterm1, searchcolumn1, searchterm2=None, searchcolumn2=None):
+    print(f"Called find_carrier with {searchterm1}, {searchcolumn1}, {searchterm2}, {searchcolumn2}")
+
+    # Building the SQL query and the tuple of parameters
+    sql = "SELECT * FROM tow_truck WHERE "
+    params = []
+
+    # Handling the first column and term
+    if searchcolumn1 in [CarrierDbFields.entry_id.value, CarrierDbFields.carrier_id.value,
+                         CarrierDbFields.discord_user.value]:
+        sql += f"{searchcolumn1} = ?"
+        params.append(searchterm1)
+    else:
+        sql += f"{searchcolumn1} LIKE ?"
+        params.append(f"%{searchterm1}%")
+
+    # Handling the second column and term (if provided)
+    if searchterm2 is not None and searchcolumn2 is not None:
+        if searchcolumn2 in [CarrierDbFields.entry_id.value, CarrierDbFields.carrier_id.value,
+                             CarrierDbFields.discord_user.value]:
+            sql += f" AND {searchcolumn2} = ?"
+            params.append(searchterm2)
+        else:
+            sql += f" AND {searchcolumn2} LIKE ?"
+            params.append(f"%{searchterm2}%")
+
+    # Executing the SQL statement
+    infraction_db.execute(sql, tuple(params))
+
+    carrier_data = [TowTruckData(carrier) for carrier in infraction_db.fetchall()]
+    # for infraction in infraction_data:
+    #     print(infraction)  # calls the __str__ method to print the contents of the instantiated class object
+
+    return carrier_data
+
+async def delete_carrier(entry_id):
+    """
+    Function to lookup a carrier by its Primary Key and delete it.
+    """
+    print(f"Attempting to delete entry {entry_id}.")
+    try:
+        await infraction_db_lock.acquire()
+        infraction_db.execute(f"DELETE FROM tow_truck WHERE entry_id = {entry_id}")
+        infraction_conn.commit()
+    finally:
+        infraction_db_lock.release()
+
+    return
+
+async def get_all_carriers():
+    print('Getting all carriers')
+    try:
+        await infraction_db_lock.acquire()
+        infraction_db.execute("SELECT * FROM tow_truck")
+        carrier_data = [TowTruckData(carrier) for carrier in infraction_db.fetchall()]
+    finally:
+        infraction_db_lock.release()
+
+    return carrier_data
