@@ -528,7 +528,7 @@ async def build_tow_truck_embed(interaction: discord.Interaction):
             for value in values:
                 field_value += f'{value}\n'
 
-            tow_lot_embed.add_field(name=field_title, value=field_value)
+            tow_lot_embed.add_field(name=field_title, value=field_value, inline=False)
     else:
         tow_lot_embed = discord.Embed(title='Tow Lot', color=constants.EMBED_COLOUR_CAUTION, description='No carriers in tow lot')
 
