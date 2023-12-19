@@ -94,11 +94,17 @@ class TowTruckCommands(commands.Cog):
                             warning_time=int(time.time()), rule_number=6, original_interaction=interaction,
                             warning_message='')
 
-            # end
-            await build_or_update_tow_truck_pin_embed(interaction)
-            final_embed = discord.Embed(description=f'Successfully towed {member.mention}\'s carrier', color=constants.EMBED_COLOUR_QU)
-            await interaction.followup.send(embed=final_embed, ephemeral=True)
-            await spam_channel.send(embed=spam_embed)
+            final_embed = discord.Embed(description=f'Successfully towed {member.mention}\'s carrier',
+                                        color=constants.EMBED_COLOUR_QU)
+
+        else:
+            final_embed = discord.Embed(description=f'Successfully towed the carrier',
+                                        color=constants.EMBED_COLOUR_QU)
+
+        # end
+        await build_or_update_tow_truck_pin_embed(interaction)
+        await interaction.followup.send(embed=final_embed, ephemeral=True)
+        await spam_channel.send(embed=spam_embed)
 
     @tow_carrier.autocomplete('carrier_position')
     async def position_autocomplete(self, interaction: discord.Interaction, current: str) -> List[
