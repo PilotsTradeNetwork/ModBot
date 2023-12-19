@@ -5,9 +5,10 @@ from discord import app_commands
 from discord.app_commands import commands
 
 from ptn.modbot import constants
+from ptn.modbot.bot import bot
 from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam, forum_channel, \
-    EMBED_COLOUR_CAUTION, EMBED_COLOUR_ORANG, EMBED_COLOUR_EVIL
-from ptn.modbot.database.database import find_infraction, insert_infraction
+    EMBED_COLOUR_CAUTION, EMBED_COLOUR_ORANG, EMBED_COLOUR_EVIL, channel_cco_wmm
+from ptn.modbot.database.database import find_infraction, insert_infraction, get_all_carriers
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error, CommandRoleError
 
 """
@@ -205,12 +206,12 @@ WARNING HELPER
 async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
                     warning_reason: str, warning_time: int, rule_number: int, original_interaction: discord.Interaction
                     , warning_message: str, image: str = None, send_dm: bool = False):
+    # initial constnats
     spamchannel = interaction.guild.get_channel(channel_botspam())
     evidence_channel = interaction.guild.get_channel(channel_evidence())
 
     # find and count previous infractions
     infractions = await find_infraction(warned_user.id, 'warned_user')
-    # (len(infractions))
     current_infraction_number = len(infractions) + 1
 
     # handle thread (find if exists, create if not)
@@ -232,6 +233,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             return await on_generic_error(interaction=interaction, error=e)
     if warning_message:
         warning_reason = f'{warning_reason}\n{warning_message}'
+
     # Insert infraction into database
     try:
         infraction = await insert_infraction(
@@ -248,7 +250,6 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         except Exception as e:
             return await on_generic_error(interaction, e)
     color = warning_color(current_infraction_number)
-    # print(f'color: {color}')
 
     # post infraction to thread
     embed = discord.Embed(
@@ -496,3 +497,60 @@ def edit_warning_reason(reason, new_reason):
     # Join the lines back into a single string
     updated_message_infraction = '\n'.join(lines)
     return updated_message_infraction
+
+
+async def build_tow_truck_embed(interaction: discord.Interaction):
+    guild = interaction.guild
+    carrier_objects = await get_all_carriers()
+    tow_lot_embed = discord.Embed(title='Tow Lot', color=constants.EMBED_COLOUR_CAUTION)
+    tow_lot_dict = {}
+    if carrier_objects:
+        for carrier in carrier_objects:
+            carrier_name = carrier.carrier_name
+            carrier_id = carrier.carrier_id
+            carrier_owner = carrier.in_game_carrier_owner
+            carrier_position = carrier.carrier_position
+            carrier_discord_user = carrier.discord_user
+
+            if carrier_position not in tow_lot_dict:
+                tow_lot_dict[carrier_position] = []
+
+            carrier_string = f'{carrier_name} ({carrier_id}) | {carrier_owner}'
+            if carrier_discord_user:
+                user = guild.get_member(carrier_discord_user)
+                carrier_string += f' {user.mention}'
+
+            tow_lot_dict[carrier_position].append(carrier_string)
+
+        for key, values in tow_lot_dict.items():
+            field_title = key + ":\n"
+            field_value = ''
+            for value in values:
+                field_value += f'{value}\n'
+
+            tow_lot_embed.add_field(name=field_title, value=field_value)
+    else:
+        tow_lot_embed = discord.Embed(title='Tow Lot', color=constants.EMBED_COLOUR_CAUTION, description='No carriers in tow lot')
+
+    return tow_lot_embed
+
+
+async def build_or_update_tow_truck_pin_embed(interaction: discord.Interaction):
+    # get embed message if exists
+    wmm_channel = interaction.guild.get_channel(channel_cco_wmm())
+    pins = await wmm_channel.pins()
+    new_embed = await build_tow_truck_embed(interaction)
+
+    embed_exists = False
+    for message in pins:
+        if message.author.id == bot.user.id:
+            if message.embeds[0].title == 'Tow Lot':
+                embed_exists = True
+                embed_message = message
+
+    if embed_exists:
+        await embed_message.edit(embed=new_embed)
+
+    else:
+        message = await wmm_channel.send(embed=new_embed)
+        await message.pin(reason='Tow Truck Embed')

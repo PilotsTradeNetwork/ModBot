@@ -7,6 +7,7 @@ The Python script that starts the bot.
 import asyncio
 import os
 
+from ptn.modbot.botcommands.TowTruckCommands import TowTruckCommands
 # import build functions
 from ptn.modbot.database.database import build_database_on_startup
 
@@ -33,6 +34,7 @@ async def modbot():
         build_database_on_startup()
         await bot.add_cog(ModCommands(bot))
         await bot.add_cog(DatabaseInteraction(bot))
+        await bot.add_cog(TowTruckCommands(bot))
         await bot.start(TOKEN)
 
 
