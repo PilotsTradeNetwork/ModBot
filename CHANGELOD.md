@@ -1,4 +1,18 @@
 # Changelog
+## 1.3.0: Tow Truck Update
+### constants.py
+- added CCO WMM channel and tow truck role
+
+### database.py
+- added tow truck table and interaction functions
+
+### Helpers.py
+- added functions for tow truck embed building
+### ModCommands.py
+- removed error handler from file in favor of import
+- added link to dyno hit in 'warning from report'
+### Created TowTruckCommands.py
+### Created TowTruckData.py
 ## 1.2.6
 - Removed deletion of Dyno hits
 ## 1.2.5
