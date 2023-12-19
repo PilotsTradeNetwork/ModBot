@@ -63,9 +63,9 @@ class TowTruckCommands(commands.Cog):
         roles = None
         member_id = None
         if member:
-
+            role_ids = [role.id for role in member.roles]
             # prevent mod or council from being hit
-            if any(constants.any_elevated_role) in member.roles:
+            if any(role_id in role_ids for role_id in constants.any_elevated_role) or member.bot:
                 try:
                     raise CustomError('What are you trying to do, eh?')
                 except Exception as e:
