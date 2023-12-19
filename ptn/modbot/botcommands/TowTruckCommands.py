@@ -8,6 +8,7 @@ from discord.app_commands import describe
 from discord.ext import commands
 
 from ptn.modbot import constants
+from ptn.modbot.bot import bot
 from ptn.modbot.constants import role_tow_truck, channel_botspam
 from ptn.modbot.database.database import insert_carrier, find_carrier, delete_carrier, get_all_carriers
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, CustomError, on_generic_error
@@ -62,6 +63,20 @@ class TowTruckCommands(commands.Cog):
         roles = None
         member_id = None
         if member:
+
+            # prevent mod or council from being hit
+            if any(constants.any_elevated_role) in member.roles:
+                try:
+                    raise CustomError('What are you trying to do, eh?')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            if member == bot.user:
+                embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
+                embed.set_image(url=constants.the_bird)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            # Transform roles into string for storage
             role_ids = [str(role.id) for role in member.roles]
             roles_string = ",".join(role_ids)
             member_id = member.id
