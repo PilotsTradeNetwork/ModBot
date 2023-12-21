@@ -1,4 +1,27 @@
 # Changelog
+## 1.3.7
+### TowTruckCommands.py
+- checks to stop tow command if bot cannot edit a member's roles
+
+## 1.3.6
+### TowTruckCommands.py
+- Removed `discord_user` param for `tow_carrier` in favor of regex match form `carrier_owner`
+
+### Helpers.py
+- Carrier owner in tow lot carrier string is now either member mention or string, not both
+## 1.3.5
+### TowTruckCommands.py
+- added prevention of council, mods, and bots being towed
+- the bird
+
+## 1.3.2
+### Helpers.py
+- changed tow truck embed fields to not be inline
+
+## 1.3.1
+### TowTruckCommands.py
+- fixed improper ending calls upon impoun
+
 ## 1.3.0: Tow Truck Update
 ### constants.py
 - added CCO WMM channel and tow truck role
