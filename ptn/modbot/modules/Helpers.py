@@ -515,10 +515,12 @@ async def build_tow_truck_embed(interaction: discord.Interaction):
             if carrier_position not in tow_lot_dict:
                 tow_lot_dict[carrier_position] = []
 
-            carrier_string = f'{carrier_name} ({carrier_id}) | {carrier_owner}'
+            carrier_string = f'{carrier_name} ({carrier_id}) | '
             if carrier_discord_user:
                 user = guild.get_member(carrier_discord_user)
                 carrier_string += f' {user.mention}'
+            else:
+                carrier_string += f'{carrier_owner}'
 
             tow_lot_dict[carrier_position].append(carrier_string)
 

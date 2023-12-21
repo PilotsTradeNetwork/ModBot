@@ -1,3 +1,4 @@
+import re
 import time
 from sqlite3 import IntegrityError
 from typing import List
@@ -31,9 +32,9 @@ class TowTruckCommands(commands.Cog):
 
     @app_commands.command(name='impound', description='Tow a carrier to the impound lot | Generates an infraction')
     @check_roles(constants.any_elevated_role)
-    @describe(carrier_owner='In-game name')
+    @describe(carrier_owner='In-game name or @user')
     async def tow_carrier(self, interaction: discord.Interaction, carrier_name: str,
-                          carrier_id: str, carrier_position: str, carrier_owner: str, member: discord.Member = None):
+                          carrier_id: str, carrier_position: str, carrier_owner: str):
 
         # initial constants
         guild = interaction.guild
@@ -41,6 +42,36 @@ class TowTruckCommands(commands.Cog):
         spam_channel = guild.get_channel(channel_botspam())
         spam_embed = discord.Embed(description=f'{interaction.user.mention} impounded a carrier with the id '
                                                f'{carrier_id}', color=constants.EMBED_COLOUR_QU)
+        bot_guild_member = guild.get_member(bot.user.id)
+
+        # check for member object
+        regex_mention_pattern = r"<@!?(\d+)>"
+        match = re.search(regex_mention_pattern, carrier_owner)
+        member = None
+        if match:
+            member_id = int(match.group(1))
+            member = guild.get_member(member_id)
+
+        # if member, check if bot can edit roles
+        if member:
+            if member == guild.owner:
+                try:
+                    raise CustomError('You cannot tow the discord owner!')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            if not bot_guild_member.guild_permissions.manage_roles:
+                try:
+                    raise CustomError('Bot does not have role edit permissions!')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            if bot_guild_member.top_role.position < member.top_role.position:
+                try:
+                    raise CustomError('Bot cannot tow members with higher roles!')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
         position_choices = [
             'Wally Bei | Planet 4 (Malerba)',
             'Wally Bei | Planet 5 (Swanson)',
@@ -64,6 +95,7 @@ class TowTruckCommands(commands.Cog):
         member_id = None
         if member:
             role_ids = [role.id for role in member.roles]
+
             # prevent mod or council from being hit
             if any(role_id in role_ids for role_id in constants.any_elevated_role) or member.bot:
                 try:
@@ -71,11 +103,13 @@ class TowTruckCommands(commands.Cog):
                 except Exception as e:
                     return await on_generic_error(interaction, e)
 
+            # the bird
             if member == bot.user:
                 embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
                 embed.set_image(url=constants.the_bird)
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
+
             # Transform roles into string for storage
             role_ids = [str(role.id) for role in member.roles]
             roles_string = ",".join(role_ids)
@@ -91,7 +125,8 @@ class TowTruckCommands(commands.Cog):
                                  discord_user=member_id, user_roles=roles, carrier_position=carrier_position)
         except IntegrityError:
             print('Carrier is already in database, returning...')
-            already_towed_embed = discord.Embed(description='Carrier is already in the lot!', color=constants.EMBED_COLOUR_CAUTION)
+            already_towed_embed = discord.Embed(description='Carrier is already in the lot!',
+                                                color=constants.EMBED_COLOUR_CAUTION)
             await interaction.followup.send(embed=already_towed_embed, ephemeral=True)
             return
 
@@ -149,7 +184,6 @@ class TowTruckCommands(commands.Cog):
         tow_truck_role = interaction.guild.get_role(role_tow_truck())
         multiple_carriers = False
 
-
         # initial response
         await interaction.response.defer(ephemeral=True, thinking=True)
 
@@ -167,10 +201,9 @@ class TowTruckCommands(commands.Cog):
                 carrier_ids = [carrier.carrier_id for carrier in carrier_object]
                 carrier_ids_string = "\n".join(carrier_ids)
                 multi_carrier_embed = discord.Embed(description='This member has multiple carriers, '
-                                                                'please go by carrier id.\n'+carrier_ids_string)
+                                                                'please go by carrier id.\n' + carrier_ids_string)
                 await interaction.followup.send(embed=multi_carrier_embed, ephemeral=True)
                 return
-
 
         if carrier_id:
             carrier_object = await find_carrier(carrier_id, 'carrier_id')
@@ -211,10 +244,12 @@ class TowTruckCommands(commands.Cog):
 
                     await member.add_roles(role)
 
-                except:
+                except Exception as e:
+                    print(e)
                     bad_roles.append(role_id)
 
             if bad_roles:
+                print("COULD NOT GIVE ROLES")
                 print(bad_roles)
 
         # end
@@ -228,8 +263,9 @@ class TowTruckCommands(commands.Cog):
         await interaction.followup.send(embed=success_embed, ephemeral=True)
 
         if member:
-            spam_embed = discord.Embed(description=f'ℹ️ {interaction.user.mention} removed carrier {carrier_id} from '
-                                                   f'the tow lot ({member.mention})')
+            spam_embed = discord.Embed(
+                description=f'ℹ️ {interaction.user.mention} removed {member.mention}\'s carrier from '
+                            f'the tow lot ()')
         else:
             spam_embed = discord.Embed(description=f'ℹ️ {interaction.user.mention} removed carrier {carrier_id} from '
                                                    f'the tow lot')
