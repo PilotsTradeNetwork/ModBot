@@ -1,3 +1,4 @@
+import re
 import time
 from sqlite3 import IntegrityError
 from typing import List
@@ -31,9 +32,9 @@ class TowTruckCommands(commands.Cog):
 
     @app_commands.command(name='impound', description='Tow a carrier to the impound lot | Generates an infraction')
     @check_roles(constants.any_elevated_role)
-    @describe(carrier_owner='In-game name')
+    @describe(carrier_owner='In-game name or @user')
     async def tow_carrier(self, interaction: discord.Interaction, carrier_name: str,
-                          carrier_id: str, carrier_position: str, carrier_owner: str, member: discord.Member = None):
+                          carrier_id: str, carrier_position: str, carrier_owner: str):
 
         # initial constants
         guild = interaction.guild
@@ -41,6 +42,14 @@ class TowTruckCommands(commands.Cog):
         spam_channel = guild.get_channel(channel_botspam())
         spam_embed = discord.Embed(description=f'{interaction.user.mention} impounded a carrier with the id '
                                                f'{carrier_id}', color=constants.EMBED_COLOUR_QU)
+
+        regex_mention_pattern = r"<@!?(\d+)>"
+        match = re.search(regex_mention_pattern, carrier_owner)
+        member = None
+        if match:
+            member_id = int(match.group(1))
+            member = guild.get_member(member_id)
+
         position_choices = [
             'Wally Bei | Planet 4 (Malerba)',
             'Wally Bei | Planet 5 (Swanson)',
@@ -211,10 +220,12 @@ class TowTruckCommands(commands.Cog):
 
                     await member.add_roles(role)
 
-                except:
+                except Exception as e:
+                    print(e)
                     bad_roles.append(role_id)
 
             if bad_roles:
+                print("COULD NOT GIVE ROLES")
                 print(bad_roles)
 
         # end
@@ -228,8 +239,8 @@ class TowTruckCommands(commands.Cog):
         await interaction.followup.send(embed=success_embed, ephemeral=True)
 
         if member:
-            spam_embed = discord.Embed(description=f'ℹ️ {interaction.user.mention} removed carrier {carrier_id} from '
-                                                   f'the tow lot ({member.mention})')
+            spam_embed = discord.Embed(description=f'ℹ️ {interaction.user.mention} removed {member.mention}\'s carrier from '
+                                                   f'the tow lot ()')
         else:
             spam_embed = discord.Embed(description=f'ℹ️ {interaction.user.mention} removed carrier {carrier_id} from '
                                                    f'the tow lot')
