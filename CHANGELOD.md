@@ -1,4 +1,16 @@
 # Changelog
+## 1.3.8
+### TowTruckCommands.py
+- towing a member now pings/re-pings the tow truck role in the tow truck channel
+- towing a member who already has tow truck will skip role functions, role ping, and infraction
+- added guild constant to `release_carrier`
+- combined `release_carrier` inputs to one with regex and input screening
+- added logic to handle and transfer roles between carriers on release
+- added @everyone skip to release
+- added carrier_id to member carrier release spam embed
+
+## database.py
+- added function to edit carrier object in database
 ## 1.3.7
 ### TowTruckCommands.py
 - checks to stop tow command if bot cannot edit a member's roles

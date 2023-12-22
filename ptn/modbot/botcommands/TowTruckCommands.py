@@ -10,11 +10,11 @@ from discord.ext import commands
 
 from ptn.modbot import constants
 from ptn.modbot.bot import bot
-from ptn.modbot.constants import role_tow_truck, channel_botspam
-from ptn.modbot.database.database import insert_carrier, find_carrier, delete_carrier, get_all_carriers
+from ptn.modbot.constants import role_tow_truck, channel_botspam, channel_tow_truck
+from ptn.modbot.database.database import insert_carrier, find_carrier, delete_carrier, get_all_carriers, edit_carrier
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, CustomError, on_generic_error
 from ptn.modbot.modules.Helpers import check_roles, warn_user, build_tow_truck_embed, \
-    build_or_update_tow_truck_pin_embed
+    build_or_update_tow_truck_pin_embed, find_largest_user_roles
 
 
 class TowTruckCommands(commands.Cog):
@@ -42,6 +42,7 @@ class TowTruckCommands(commands.Cog):
         spam_channel = guild.get_channel(channel_botspam())
         spam_embed = discord.Embed(description=f'{interaction.user.mention} impounded a carrier with the id '
                                                f'{carrier_id}', color=constants.EMBED_COLOUR_QU)
+        tow_truck_channel = guild.get_channel(channel_tow_truck())
         bot_guild_member = guild.get_member(bot.user.id)
 
         # check for member object
@@ -132,17 +133,26 @@ class TowTruckCommands(commands.Cog):
 
         # member operations
         if member:
-            # Remove roles, [1:] is to skip @everyone
-            await member.remove_roles(*member.roles[1:], reason=f"Tow Truck from {interaction.user.display_name}")
+            # check if user already has tow truck
+            if str(tow_truck_role.id) not in role_ids:
+                # Remove roles, [1:] is to skip @everyone
+                await member.remove_roles(*member.roles[1:], reason=f"Tow Truck from {interaction.user.display_name}")
 
-            # Give tow truck role
-            await member.add_roles(tow_truck_role, reason=f"Tow Truck from {interaction.user.display_name}")
+                # Give tow truck role
+                await member.add_roles(tow_truck_role, reason=f"Tow Truck from {interaction.user.display_name}")
 
-            # Generate infraction
-            await warn_user(warned_user=member, interaction=interaction, warning_moderator=interaction.user,
-                            warning_reason=f'Tow Truck for carrier {carrier_id} | {carrier_position}',
-                            warning_time=int(time.time()), rule_number=6, original_interaction=interaction,
-                            warning_message='')
+                # Ping in tow channel
+                async for message in tow_truck_channel.history(limit=None):
+                    if message.author == bot.user:
+                        if message.content == tow_truck_role.mention:
+                            await message.delete()
+                await tow_truck_channel.send(tow_truck_role.mention)
+
+                # Generate infraction
+                await warn_user(warned_user=member, interaction=interaction, warning_moderator=interaction.user,
+                                warning_reason=f'Tow Truck for carrier {carrier_id} | {carrier_position}',
+                                warning_time=int(time.time()), rule_number=6, original_interaction=interaction,
+                                warning_message='')
 
             final_embed = discord.Embed(description=f'Successfully towed {member.mention}\'s carrier',
                                         color=constants.EMBED_COLOUR_QU)
@@ -173,22 +183,55 @@ class TowTruckCommands(commands.Cog):
 
     @app_commands.command(name='release', description='Removes a carrier from the impound lot')
     @check_roles(constants.any_elevated_role)
-    async def release_carrier(self, interaction: discord.Interaction, carrier_id: str = None,
-                              member: discord.Member = None):
+    async def release_carrier(self, interaction: discord.Interaction, carrier_id_or_member: str):
         print(f'Call for an impound lot release for a carrier from {interaction.user.display_name}')
 
         # initial constants
-        spam_channel = interaction.guild.get_channel(channel_botspam())
+        guild = interaction.guild
+        spam_channel = guild.get_channel(channel_botspam())
         not_found_embed = discord.Embed(description='Carrier was not found in the database',
                                         color=constants.EMBED_COLOUR_QU)
-        tow_truck_role = interaction.guild.get_role(role_tow_truck())
+        tow_truck_role = guild.get_role(role_tow_truck())
         multiple_carriers = False
+        everyone_role = guild.default_role
 
         # initial response
         await interaction.response.defer(ephemeral=True, thinking=True)
 
         # Catch non-input
-        if not member and not carrier_id:
+        # check for member object
+        regex_mention_pattern = r"<@!?(\d+)>"
+        regex_id_pattern = r"[A-Za-z]{3}-\d{3}"
+        member_match = re.findall(regex_mention_pattern, carrier_id_or_member)
+        id_match = re.findall(regex_id_pattern, carrier_id_or_member)
+        member = None
+        if member_match and id_match:
+            try:
+                raise CustomError('You can only input member or id, not both!')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
+        if member_match:
+            if len(member_match) > 1:
+                try:
+                    raise CustomError('You can only input one member!')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            member_id = int(member_match[0])
+            member = guild.get_member(member_id)
+
+        elif id_match:
+            if len(id_match) > 1:
+                try:
+                    raise CustomError('You can only input one id!')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+
+            carrier_id = carrier_id_or_member
+            carrier_to_remove = await find_carrier(carrier_id, 'carrier_id')
+
+        else:
             try:
                 raise CustomError('You must put in a carrier id or a discord member!')
             except Exception as e:
@@ -196,32 +239,54 @@ class TowTruckCommands(commands.Cog):
 
         # Find carrier and delete carrier
         if member:
-            carrier_object = await find_carrier(member.id, 'discord_user')
-            if len(carrier_object) > 1:
-                carrier_ids = [carrier.carrier_id for carrier in carrier_object]
+            carrier_to_remove = await find_carrier(member.id, 'discord_user')
+            if len(carrier_to_remove) > 1:
+                carrier_ids = [carrier.carrier_id for carrier in carrier_to_remove]
                 carrier_ids_string = "\n".join(carrier_ids)
                 multi_carrier_embed = discord.Embed(description='This member has multiple carriers, '
                                                                 'please go by carrier id.\n' + carrier_ids_string)
                 await interaction.followup.send(embed=multi_carrier_embed, ephemeral=True)
                 return
 
-        if carrier_id:
-            carrier_object = await find_carrier(carrier_id, 'carrier_id')
-
         # Message and end if not found
-        if not carrier_object:
+        if not carrier_to_remove:
             await interaction.followup.send(embed=not_found_embed, ephemeral=True)
             return
 
-        possible_member = carrier_object[0].discord_user
+        possible_member = carrier_to_remove[0].discord_user
         if possible_member:
             member = interaction.guild.get_member(possible_member)
             if member:
-                multiple_carriers = len(await find_carrier(member.id, 'discord_user')) > 1
+                carriers = await find_carrier(member.id, 'discord_user')
+                multiple_carriers = len(carriers) > 1
                 print(multiple_carriers)
 
+        # Get the carrier with the roles
+        if multiple_carriers:
+
+            # filter carrier to remove from other carriers
+            other_carriers = [carrier for carrier in carriers if carrier.entry_id != carrier_to_remove[0].entry_id]
+
+            # get role count in carrier_to_remove
+            to_remove_role_count = len(carrier_to_remove[0].user_roles.split(','))
+
+            # get the max number of roles from other carrier objects
+            max_roles = 0
+            for carrier in other_carriers:
+                if carrier.entry_id == carrier_to_remove[0].entry_id:
+                    continue
+                num_roles = len(carrier.user_roles.split(','))
+                if num_roles > max_roles:
+                    max_roles = num_roles
+
+            # transfer roles to the next carrier if the carrier to remove has the highest number
+            if to_remove_role_count > max_roles:
+                roles_to_carrier = other_carriers[0]
+                await edit_carrier(roles_to_carrier.entry_id, user_roles=carrier_to_remove[0].user_roles)
+
         # Entry id from object
-        entry_id = carrier_object[0].entry_id
+        entry_id = carrier_to_remove[0].entry_id
+        carrier_id = carrier_to_remove[0].carrier_id
 
         # Delete carrier from database
         await delete_carrier(entry_id)
@@ -232,9 +297,16 @@ class TowTruckCommands(commands.Cog):
             await member.remove_roles(tow_truck_role)
 
             # get roles from object
-            roles = [int(role_id) for role_id in carrier_object[0].user_roles.split(",")]
+            roles = [int(role_id) for role_id in carrier_to_remove[0].user_roles.split(",")]
             bad_roles = []
+            roles_list = []
             for role_id in roles:
+
+                # skip everyone
+                if role_id == everyone_role.id:
+                    continue
+
+                # try to give roles, add to list if can't
                 try:
                     role = interaction.guild.get_role(role_id)
 
@@ -242,11 +314,13 @@ class TowTruckCommands(commands.Cog):
                     if not role:
                         bad_roles.append(role_id)
 
-                    await member.add_roles(role)
+                    roles_list.append(role)
 
                 except Exception as e:
                     print(e)
                     bad_roles.append(role_id)
+
+            await member.add_roles(*roles_list)
 
             if bad_roles:
                 print("COULD NOT GIVE ROLES")
@@ -265,7 +339,7 @@ class TowTruckCommands(commands.Cog):
         if member:
             spam_embed = discord.Embed(
                 description=f'ℹ️ {interaction.user.mention} removed {member.mention}\'s carrier from '
-                            f'the tow lot ()')
+                            f'the tow lot ({carrier_id})', color=constants.EMBED_COLOUR_QU)
         else:
             spam_embed = discord.Embed(description=f'ℹ️ {interaction.user.mention} removed carrier {carrier_id} from '
                                                    f'the tow lot')
