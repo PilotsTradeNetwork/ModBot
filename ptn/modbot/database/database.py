@@ -430,6 +430,7 @@ async def find_carrier(searchterm1, searchcolumn1, searchterm2=None, searchcolum
 
     return carrier_data
 
+
 async def delete_carrier(entry_id):
     """
     Function to lookup a carrier by its Primary Key and delete it.
@@ -444,6 +445,7 @@ async def delete_carrier(entry_id):
 
     return
 
+
 async def get_all_carriers():
     print('Getting all carriers')
     try:
@@ -454,3 +456,54 @@ async def get_all_carriers():
         infraction_db_lock.release()
 
     return carrier_data
+
+
+async def edit_carrier(entry_id, carrier_name=None, carrier_id=None, carrier_position=None, in_game_carrier_owner=None,
+                       discord_user=None, user_roles=None):
+    print(f"Editing infraction with entry ID {entry_id}.")
+
+    try:
+        await infraction_db_lock.acquire()
+
+        # Prepare the SET part of the SQL command
+        updates = []
+        parameters = []
+        if carrier_name is not None:
+            updates.append("carrier_name = ?")
+            parameters.append(carrier_name)
+        if carrier_id is not None:
+            updates.append("carrier_id = ?")
+            parameters.append(carrier_id)
+        if carrier_position is not None:
+            updates.append("carrier_position = ?")
+            parameters.append(carrier_position)
+        if in_game_carrier_owner is not None:
+            updates.append("in_game_carrier_owner = ?")
+            parameters.append(in_game_carrier_owner)
+        if discord_user is not None:
+            updates.append("discord_user = ?")
+            parameters.append(discord_user)
+        if user_roles is not None:
+            updates.append("user_roles = ?")
+            parameters.append(user_roles)
+
+        set_command = ", ".join(updates)
+        parameters.append(entry_id)
+
+        # Check if there is anything to update
+        if not updates:
+            print("No updates provided.")
+            return False
+
+        # Execute the update command
+        infraction_db.execute(
+            f"UPDATE tow_truck SET {set_command} WHERE entry_id = ?",
+            tuple(parameters)
+        )
+        infraction_conn.commit()
+
+    finally:
+        infraction_db_lock.release()
+
+    print("Carrier updated.")
+    return True
