@@ -47,14 +47,18 @@ class TowTruckCommands(commands.Cog):
 
         # check for member object
         regex_mention_pattern = r"<@!?(\d+)>"
-        match = re.search(regex_mention_pattern, carrier_owner)
+        member_match = re.findall(regex_mention_pattern, carrier_owner)
         member = None
-        if match:
-            member_id = int(match.group(1))
+        if member_match:
+            if len(member_match) > 1:
+                try:
+                    raise CustomError('You can only input one member!')
+                except Exception as e:
+                    return await on_generic_error(interaction, e)
+            member_id = int(member_match[0])
             member = guild.get_member(member_id)
 
         # if member, check if bot can edit roles
-        if member:
             if member == guild.owner:
                 try:
                     raise CustomError('You cannot tow the discord owner!')

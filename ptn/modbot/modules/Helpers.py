@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 import discord
 from discord import app_commands
@@ -308,11 +309,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             await warned_user.send(embeds=[warning_dm_embed, reason_dm_embed])
 
         except Exception as e:
-            try:
-                raise CustomError(f'Could not DM user: {e}')
-            except Exception as e:
-                return await on_generic_error(interaction, e)
-
+            await interaction.followup.send(content="Could not DM user", ephemeral=True)
     # Success Message
     embed = discord.Embed(
         description="✅ **Successfully issued and logged infraction.**",
@@ -532,7 +529,8 @@ async def build_tow_truck_embed(interaction: discord.Interaction):
 
             tow_lot_embed.add_field(name=field_title, value=field_value, inline=False)
     else:
-        tow_lot_embed = discord.Embed(title='Tow Lot', color=constants.EMBED_COLOUR_CAUTION, description='No carriers in tow lot')
+        tow_lot_embed = discord.Embed(title='Tow Lot', color=constants.EMBED_COLOUR_CAUTION,
+                                      description='No carriers in tow lot')
 
     return tow_lot_embed
 
@@ -556,3 +554,44 @@ async def build_or_update_tow_truck_pin_embed(interaction: discord.Interaction):
     else:
         message = await wmm_channel.send(embed=new_embed)
         await message.pin(reason='Tow Truck Embed')
+
+
+# get return the carrier object with the largest number of roles
+def find_largest_user_roles(carriers):
+    def numerical_value_of_roles(roles):
+        # Split the string into individual numbers and convert them to integers
+        return [int(role) for role in roles.split(',')]
+
+    def compare_roles(roles1, roles2):
+        # Compare two sequences of numbers
+        for a, b in zip(roles1, roles2):
+            if a != b:
+                return a - b
+        return 0
+
+    largest_carrier = None
+    largest_roles = []
+
+    for carrier in carriers:
+        current_roles = numerical_value_of_roles(carrier.user_roles)
+
+        if largest_carrier is None or compare_roles(current_roles, largest_roles) > 0:
+            largest_carrier = carrier
+            largest_roles = current_roles
+
+    return largest_carrier
+
+
+def member_or_member_id(input: str):
+    regex_mention_pattern = r"<@!?(\d+)>"
+    regex_id_pattern = r'\d{18}'
+    member_match = re.findall(regex_mention_pattern, input)
+    id_match = re.findall(regex_id_pattern, input)
+    if member_match:
+        return member_match
+
+    elif id_match:
+        return id_match
+
+    else:
+        return None
