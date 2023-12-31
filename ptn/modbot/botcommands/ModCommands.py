@@ -27,7 +27,7 @@ from ptn.modbot.database.database import find_infraction, delete_single_warning,
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
     get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
-    warning_color, is_in_channel, edit_warning_reason
+    warning_color, is_in_channel, edit_warning_reason, member_or_member_id
 
 '''
 MODALS FOR WARNS
@@ -366,8 +366,30 @@ class ModCommands(commands.Cog):
     @app_commands.command(name='warn', description='Warn a user')
     @check_roles(constants.any_elevated_role)
     @describe(member='The member to be warned')
-    async def warn(self, interaction: discord.Interaction, member: discord.Member):
+    async def warn(self, interaction: discord.Interaction, member: str):
         print(f"warn called by {interaction.user.display_name}")
+        guild = interaction.guild
+        regex_match = member_or_member_id(member)
+
+        if regex_match:
+            member_id = int(regex_match[0])
+            member = guild.get_member(member_id)
+
+            if not member:
+                member = await bot.fetch_user(member_id)
+
+                if not member:
+                    try:
+                        raise CustomError("Could not find discord user from id.")
+                    except Exception as e:
+                        return await on_generic_error(interaction, e)
+
+        else:
+            try:
+                raise CustomError('Could not find user.')
+            except Exception as e:
+                return await on_generic_error(interaction, e)
+
 
         if member.bot:
             if member == bot.user:
