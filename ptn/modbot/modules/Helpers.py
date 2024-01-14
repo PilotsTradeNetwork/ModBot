@@ -255,6 +255,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
     # post infraction to thread
     embed = discord.Embed(
         title=f"Infraction #{current_infraction_number}",
+        description="Warning Reason: " + warning_reason,
         timestamp=datetime.fromtimestamp(warning_time),
         color=color
     )
@@ -266,11 +267,6 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
     embed.add_field(
         name="Moderator",
         value=f"<@{warning_moderator.id}>",
-        inline=True
-    )
-    embed.add_field(
-        name="Reason",
-        value=warning_reason,
         inline=True
     )
     embed.add_field(
@@ -353,36 +349,19 @@ GENERAL HELPERS
 """
 
 
-def get_message_attachments(message: discord.Message):
-    attachments = message.attachments
-    attachment_urls = []
-    if attachments:
-        for attachment in attachments:
-            attachment_urls.append(attachment.url)
-
-    return attachment_urls
-
-
-def is_image_url(url):
-    # List of allowed image extensions
-    allowed_extensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif']
-
-    # Extract the file extension from the URL
-    file_extension = os.path.splitext(url)[1].split('?')[0]  # Splits by '?' to handle query parameters
-
-    return file_extension in allowed_extensions
-
-
-def get_role(ctx, id):  # takes a Discord role ID and returns the role object
+def get_role(ctx, id):
+    """
+    takes a Discord role ID and returns the role object
+    """
     role = discord.utils.get(ctx.guild.roles, id=id)
     return role
 
 
 async def checkroles_actual(interaction: discord.Interaction, permitted_role_ids):
+    """
+    Check if the user has at least one of the permitted roles to run a command
+    """
     try:
-        """
-        Check if the user has at least one of the permitted roles to run a command
-        """
         print(f"checkroles called.")
         author_roles = interaction.user.roles
         permitted_roles = [get_role(interaction, role) for role in permitted_role_ids]
@@ -397,6 +376,9 @@ async def checkroles_actual(interaction: discord.Interaction, permitted_role_ids
 
 
 def check_roles(permitted_role_ids):
+    """
+    Returns bool based off of if user has given roles
+    """
     async def checkroles(interaction: discord.Interaction):
         permission, permitted_roles = await checkroles_actual(interaction, permitted_role_ids)
         print("Inherited permission from checkroles")
