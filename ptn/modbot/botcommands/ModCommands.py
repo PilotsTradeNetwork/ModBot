@@ -25,9 +25,9 @@ from ptn.modbot.database.database import find_infraction, delete_single_warning,
 
 # local modules
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
-from ptn.modbot.modules.Helpers import find_thread, display_infractions, get_rule, create_thread, warn_user, \
-    get_message_attachments, is_image_url, check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
-    warning_color, is_in_channel, edit_warning_reason, member_or_member_id
+from ptn.modbot.modules.Helpers import (find_thread, display_infractions, get_rule, create_thread, warn_user,
+                                        check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
+    warning_color, is_in_channel, edit_warning_reason, member_or_member_id)
 
 '''
 MODALS FOR WARNS
@@ -60,15 +60,6 @@ class InfractionReport(ui.Modal, title='Warn User'):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # await interaction.response.send_message(
-        #     f'EXAMPLE: \n'
-        #     f'WARNED USER: {self.warned_user}\n'
-        #     f'WARNING MODERATOR: {self.warning_moderator}\n'
-        #     f'WARNING TIME: {self.warning_time}\n'
-        #     f'RULE BROKEN: {self.rule_number}\n'
-        #     f'WARNING REASON: {self.warning_reason}',
-        #     ephemeral=True
-        # )
         warning_reason = str(self.warning_reason)
         if not await rule_check(rule_number=int(str(self.rule_number)), interaction=interaction):
             return
@@ -235,7 +226,6 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
         try:
             warned_user = self.message.author
             warning_moderator = interaction.user
-            warning_time = int(time.time())
             rule_broken = int(str(self.rule_number))
             image = None
 
@@ -254,22 +244,7 @@ class MessageInfractionReport(ui.Modal, title='Delete and create infraction from
                 print('Stickers in Message')
 
             if self.attachments:
-                picture_loaded = False
-                non_image_attachments = []
-                print('Attachments in Message')
-
-                for url in self.attachments:
-                    if not picture_loaded and is_image_url(url):
-                        image = url
-                        picture_loaded = True
-                        warning_message += f'\n**Image Link:** [Image]({url})\n'
-                    else:
-                        non_image_attachments.append(url)
-
-                if non_image_attachments:
-                    warning_message += '\n**Message Attachments:**\n'
-                    for idx, att in enumerate(non_image_attachments, start=1):
-                        warning_message += f"{idx}. [Attachment]({att})\n"
+                warning_reason += "**Message had attachments**\n"
 
             if self.message.content:
                 warning_message += f"\n**Message Text:** {self.message.content}"
@@ -390,7 +365,6 @@ class ModCommands(commands.Cog):
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
-
         if member.bot:
             if member == bot.user:
                 embed = discord.Embed(color=constants.EMBED_COLOUR_ERROR)
@@ -435,47 +409,6 @@ class ModCommands(commands.Cog):
             embed = discord.Embed(description=f'<@{member.id}> does not have a thread.',
                                   color=constants.EMBED_COLOUR_QU)
             await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name='help', description='Displays a list of available commands.')
-    @can_see_channel(constants.privlidged_channel())
-    async def help_command(self, interaction: discord.Interaction):
-        # Create a new embed message for the help command
-        embed = discord.Embed(
-            title="🔧 MOD BOT COMMANDS",
-            color=constants.EMBED_COLOUR_OK
-        )
-        if check_roles(constants.any_elevated_role):
-            # Traditional commands
-            embed.add_field(name="ping", value="Use to check if modbot is online and responding. [Mention Bot]",
-                            inline=False)
-            embed.add_field(name="sync", value="Synchronise modbot interactions with server [Mention Bot]",
-                            inline=False)
-
-            # Slash commands
-            embed.add_field(name="rule", value="Prints a rule buy its number, with option to mention a member "
-                                               "[Slash Command]",
-                            inline=False)
-            embed.add_field(name="warn", value="Warn a user [Slash Command]", inline=False)
-            embed.add_field(name="find_thread", value="Finds a thread given a member [Slash Command]", inline=False)
-            embed.add_field(name='sync_infractions', value='Sync infractions from the database to the thread '
-                                                           '[Slash Command]', inline=False)
-
-            # Context Menu Commands (based on their name attributes)
-            embed.add_field(name="View Infractions", value="View a member infractions [Right-click on member]",
-                            inline=False)
-            embed.add_field(name="Delete & Warn",
-                            value="Delete a violating message and send it to the infractions thread "
-                                  "[Right-click on message]",
-                            inline=False)
-            embed.add_field(name="Remove Infraction", value="Remove an infraction [Right-click on message in thread]",
-                            inline=False)
-            embed.add_field(name="Warning from Report",
-                            value=f"Give a warning based on a report [Right-click on message "
-                                  f"in <#{channel_evidence()}>]", inline=False)
-        embed.add_field(name="Report to Mods", value="Report a message to mods [Right-click on message]", inline=False)
-
-        # Send the embed to the user
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name='sync_infractions', description='Sync infractions from the database to the thread')
     @check_roles(constants.any_elevated_role)
@@ -681,9 +614,10 @@ class ModCommands(commands.Cog):
         search = f'in:{evidence_channel.name} ID: {member.id}'
         if over_a_year:
             print('User is over a year old, sending discord search text')
-            embed = discord.Embed(description=f'⚠️ User has been in the server for over a year, use this search instead:\n'
-                                              + f'`{search}`',
-                                  color=constants.EMBED_COLOUR_CAUTION)
+            embed = discord.Embed(
+                description=f'⚠️ User has been in the server for over a year, use this search instead:\n'
+                            + f'`{search}`',
+                color=constants.EMBED_COLOUR_CAUTION)
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
@@ -784,7 +718,7 @@ async def infraction_message(interaction: discord.Interaction, message: discord.
             return await on_generic_error(interaction, e)
 
     # Get the message attachments if they exist
-    attachments = get_message_attachments(message)
+    attachments = message.attachments
     stickers = message.stickers
 
     await interaction.response.send_modal(MessageInfractionReport(interaction=interaction, message=message,
@@ -810,34 +744,22 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         except Exception as e:
             return await on_generic_error(interaction, e)
 
-    mod = False
-    if role_mod() in reporting_user_roles or role_council() in reporting_user_roles:
-        mod = True
-
-    '''Somm check - Unimplemented'''
-    # if role_council() not in reporting_user_roles and role_mod() not in reporting_user_roles:
-    #     if interaction.channel.category.id not in bc_categories():
-    #         try:
-    #             raise CustomError('You can only run this command in the Booze Cruise channels!')
-    #         except Exception as e:
-    #             return await on_generic_error(interaction=interaction, error=e)
-
-    attachment_urls = get_message_attachments(message=message)
+    mod = role_mod() in reporting_user_roles or role_council() in reporting_user_roles
 
     reported_user = message.author
     report_time = datetime.now()
-    report_title = f'### Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
+    report_title = f'## Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
                    f'<#{interaction.channel.id}>.\n'
 
-    embed = discord.Embed(
-        description=report_title,
-        timestamp=report_time,
-        color=constants.EMBED_COLOUR_QU
-    )
-    report_message = ''
+    report_message = '\n'
     if not mod:
         report_message += f'Message Link: {message.jump_url}\n'
+        evidence_message_content = f'{mod_role.mention}: report in {interaction.channel.mention} from {interaction.user.mention}'
 
+    else:
+        evidence_message_content = f'Report in {interaction.channel.mention} from {interaction.user.mention}'
+
+    # Max message length for users is 2000 characters, if we somehow go past 4096 then wtf
     if message.content:
         report_message += f"Message Text: {message.clean_content}\n"
 
@@ -846,39 +768,21 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
         for idx, sticker in enumerate(message.stickers):
             report_message += f'{idx}. [Sticker URL]({sticker.url})\n'
 
-    if attachment_urls:
-        picture_loaded = False
-        non_image_attachments = []
-        print('Attachments in Message')
+    if message.attachments:
+        report_message += '**Message has attachments**'
 
-        for url in attachment_urls:
-            if not picture_loaded and is_image_url(url):
-                embed.set_image(url=url)
-                picture_loaded = True
-                report_message += f'\n**Image Link:** [Image Link]({url})\n'
-            else:
-                non_image_attachments.append(url)
+    description = report_title + report_message
 
-        if non_image_attachments:
-            report_message += '\n**Message Attachments:**\n'
-            for idx, att in enumerate(non_image_attachments, start=1):
-                report_message += f"{idx}. [Attachment]({att})\n"
-
-    embed.add_field(
-        name='Message Content',
-        value=report_message
+    embed = discord.Embed(
+        description=description,
+        timestamp=report_time,
+        color=constants.EMBED_COLOUR_QU
     )
 
     response_embed = discord.Embed(
         description='✅ Message sent to moderation.',
         color=constants.EMBED_COLOUR_OK
     )
-
-    if not mod:
-        evidence_message_content = f'{mod_role.mention}: report in {interaction.channel.mention} from {interaction.user.mention}'
-
-    else:
-        evidence_message_content = f'Report in {interaction.channel.mention} from {interaction.user.mention}'
 
     await evidence_channel.send(embed=embed, content=evidence_message_content)
 
@@ -926,7 +830,6 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
 @is_in_channel(channel_evidence())
 @check_roles(constants.any_elevated_role)
 async def report_to_warn(interaction: discord.Interaction, message: discord.Message):
-
     # Check if message is from Dyno
     dyno = False
     if message.author.id == dyno_user():
@@ -942,7 +845,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
 
     # check and get dyno embed
     try:
-        dyno_embed = message.embeds[0]
+        report_embed = message.embeds[0]
     except IndexError:
         try:
             raise CustomError('Must be run on reports only!')
@@ -952,22 +855,21 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
     # If message is from ModBot
     if not dyno:
         try:
-            content_field = dyno_embed.fields[0].value
+            user_pattern = r"<@(\d+)>"
+            channel_pattern = r"<#(\d+)>"
+            content = report_embed.description
+            content_title = content.split('\n')[0]
+            user_ids = re.findall(user_pattern, content_title)
+            channel_ids = re.findall(channel_pattern, content_title)
+            if not (len(user_ids) == 2 and len(channel_ids) == 1):
+                raise Exception
         except:
             try:
                 raise CustomError('Must be run on reports only!')
             except Exception as e:
                 return await on_generic_error(interaction, e)
 
-        # Get the link to the message
-        pattern = r"Message Link: (http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)\n"
-        content_field = re.sub(pattern, '', content_field)
-        report_info = dyno_embed.description
-        image = None
-
-        # Get image if it is in report
-        if dyno_embed.image:
-            image = dyno_embed.image.url
+        report_info = report_embed.description
 
         # Get the ids for the reporter, the reported, and the channel which the id is from
         numbers = re.findall(r'<[@#](\d+)>', report_info)
@@ -993,11 +895,13 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
 
         # Reporter should probably be in the server, if not then wtf
         reporter_user = interaction.guild.get_member(int(reporter_id))
-        content_field += f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>'
+        message_link = message.jump_url
+        content_field = (f'\nOriginal Reporter: <@{reporter_user.id}>\nReported Channel: <#{channel_id}>\n'
+                         f'Report Message Link: {message_link}')
 
     else:
-        fields = dyno_embed.fields
-        main_content = dyno_embed.description
+        fields = report_embed.fields
+        main_content = report_embed.description
 
         header_pattern = re.compile(r"<@\d+>.*<#\d+>\*\*")
         if not bool(header_pattern.search(main_content)):
@@ -1036,7 +940,6 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
         # print(reported_context)
         content_field = f'**From Dyno**\nWord Hit: {hit_word}\nHit Reason: {hit_reason}\nChannel: <#{reported_channel}>' \
                         f'\nLink to hit: {message.jump_url}'
-        image = None
 
     # Modal for rule number reporting
     class RuleModal(discord.ui.Modal):
@@ -1059,7 +962,7 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                     'warning_reason': warning_reason,
                     'warning_time': int(time.time()),
                     'rule_number': int(str(self.rule_number)),
-                    'image': image
+                    'image': None
                 }
 
                 embed = discord.Embed(
