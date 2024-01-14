@@ -1,4 +1,15 @@
 # Changelog
+## 1.3.9
+### Helpers.py
+- Switched warning reasons from fields to description in infractions
+- Added docstrings
+### ModCommands.py
+- Removed attachment linking in reasons due to discord link change
+- Removed help command
+- change mod check to be single line
+- Changed message report to description only for character space
+- changed check from fields to regex match in Warning from Report
+- Moved message jump URL in Warning from Report
 ## 1.3.8
 ### TowTruckCommands.py
 - towing a member now pings/re-pings the tow truck role in the tow truck channel
