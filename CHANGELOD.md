@@ -1,4 +1,6 @@
 # Changelog
+## 1.3.10
+- Fixed formatting for report to moderation
 ## 1.3.9
 ### Helpers.py
 - Switched warning reasons from fields to description in infractions
