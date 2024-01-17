@@ -748,7 +748,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 
     reported_user = message.author
     report_time = datetime.now()
-    report_title = f'## Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
+    report_title = f'### Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
                    f'<#{interaction.channel.id}>.\n'
 
     report_message = '\n'
