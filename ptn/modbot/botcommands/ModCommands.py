@@ -971,8 +971,6 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                 await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
 
                                                         ephemeral=True, embed=embed)
-                if not dyno:
-                    await message.delete()
             except Exception as e:
                 try:
                     raise CustomError(f'Could not warn from report! `{e}`')
