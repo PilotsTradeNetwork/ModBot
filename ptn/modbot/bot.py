@@ -25,8 +25,6 @@ from ptn.modbot.constants import channel_botspam, EMBED_COLOUR_OK, dev_channel
 """
 Bot object
 """
-
-
 # define bot object
 class ModBot(commands.Bot):
     def __init__(self):

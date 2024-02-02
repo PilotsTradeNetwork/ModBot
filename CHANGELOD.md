@@ -1,4 +1,16 @@
 # Changelog
+## 1.4.0
+### Helpers.py
+- changed `create_thread` and `find_thread` to use user id's instead of objects
+- `display_infractions` now displays infractions if there is no thread
+- overhauled `warn_user`, removed all thread handling and infraction posting, added dynamic handling for dyno infractions
+- created `sync_infractions`: handles all creation and deletion of threads and creation, deletion, and editing of infractions
+## ModCommands.py
+- `DeletionConformation` no longer handles threads and now relies on `sync_infractions` from Helpers.py
+- `sync_infractions` command now relies fully on the helper in Helpers.py
+- updated old, and incorrect, field values in `remove_infraction`
+## 1.3.11
+- Removed deletion of user reports upon warn
 ## 1.3.10
 - Fixed formatting for report to moderation
 ## 1.3.9
