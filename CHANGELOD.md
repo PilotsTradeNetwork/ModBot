@@ -1,4 +1,6 @@
 # Changelog
+## 1.4.1
+- Fixed formatting issue in mod summon
 ## 1.4.0
 ### Helpers.py
 - changed `create_thread` and `find_thread` to use user id's instead of objects

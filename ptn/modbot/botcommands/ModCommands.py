@@ -476,7 +476,7 @@ class ModCommands(commands.Cog):
                     title='🛡️ A mod is answering the summons',
                     description=f"{summon_info['summon_time']} {user.mention} is answering the mod summon in "
                                 f"{summon_info['channel_mention']}."
-                                f"\n\n**Last message before summon:** [Jump to message]({summon_info['last_message_link']})",
+                                f"\n\n**Last message before summon:** {summon_info['last_message_link']}",
                     color=constants.EMBED_COLOUR_OK
                 )
                 self.summon_message_ids.pop(reaction.message.id, None)
