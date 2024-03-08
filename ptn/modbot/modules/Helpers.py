@@ -2,20 +2,15 @@ import os
 import re
 from datetime import datetime
 import discord
-import inflect
 from discord import app_commands
 from discord.app_commands import commands
 
-import ptn.modbot.bot
 from ptn.modbot import constants
 from ptn.modbot.bot import bot
 from ptn.modbot.constants import channel_evidence, bot_guild, channel_rules, channel_botspam, forum_channel, \
     EMBED_COLOUR_CAUTION, EMBED_COLOUR_ORANG, EMBED_COLOUR_EVIL, channel_cco_wmm
 from ptn.modbot.database.database import find_infraction, insert_infraction, get_all_carriers
 from ptn.modbot.modules.ErrorHandler import CustomError, on_generic_error, CommandRoleError
-
-# inflect engine
-p = inflect.engine()
 
 """
 THREAD HELPERS
@@ -25,28 +20,28 @@ Used for thread creation/interactions
 
 
 # create thread
-def create_thread(user_id, guild):
+def create_thread(member: discord.Member, guild: discord.Guild):
     try:
+        # get member info
+        member_name = member.name
+        member_id = member.id
+
         # get channel info
-        print(f'create_thread called for {user_id}')
+        print(f'create_thread called for {member_name}')
         infractions_channel = guild.get_channel_or_thread(forum_channel())
 
-        # member info
-        member = guild.get_member(user_id)
-        member_name = member.display_name
-
         # create thread
-        thread_name = f'{member_name} | {user_id}'
+        thread_name = f'{member_name} | {member_id}'
         return infractions_channel.create_thread(name=thread_name, content='🔨')
     except Exception as e:
         raise CustomError(f"Error in thread creation: {e}")
 
 
 # gets thread by id match in name
-async def find_thread(user_id, guild):
+async def find_thread(interaction: discord.Interaction, member: discord.Member, guild: discord.Guild):
     # get member info
-    member = guild.get_member(user_id)
     member_name = member.name
+    member_id = member.id
 
     # get channel info
     print(f'find_thread called for {member_name}')
@@ -55,13 +50,18 @@ async def find_thread(user_id, guild):
 
     threads = evidence_channel.threads
     # print(type(threads))
-    thread = next((thread for thread in threads if str(user_id) in thread.name), None)
+    thread = next((thread for thread in threads if str(member_id) in thread.name), None)
     # print(thread)
 
     if thread:
         return thread
 
     else:
+        # embed = discord.Embed(
+        #    description=f"❓ That thread doesn't exist for user <@{member_id}>.",
+        #    color=discord.Color.yellow()
+        # )
+        # await interaction.response.send_message(embed=embed, ephemeral=True)
         return False
 
 
@@ -90,13 +90,21 @@ async def display_infractions(interaction: discord.Interaction, member: discord.
         embed.set_footer(text=f'ID: {member.id}')
 
         # find if thread exists
-        thread = await find_thread(member.id, guild)
+        thread = await find_thread(guild=guild, member=member, interaction=interaction)
         if thread:
             embed.description = f'Thread: <#{thread.id}>'
 
+        else:
+            no_infractions = discord.Embed(
+                description='User has no infractions on record.',
+                color=constants.EMBED_COLOUR_QU
+            )
+            await interaction.response.send_message(embed=no_infractions, ephemeral=True)
+            return
+
         # display infractions as a list
         if not infractions:
-            embed.description += "\nUser has no infractions on record."
+            embed.description = embed.description + "\nUser has no infractions on record."
         else:
             for i, infraction in enumerate(infractions, start=1):
                 infraction_value = f'<t:{infraction.warning_time}:f> | Rule Broken: {infraction.rule_broken} | Warning ' \
@@ -199,36 +207,33 @@ WARNING HELPER
 async def warn_user(warned_user: discord.Member, interaction: discord.Interaction, warning_moderator: discord.Member,
                     warning_reason: str, warning_time: int, rule_number: int, original_interaction: discord.Interaction
                     , warning_message: str, image: str = None, send_dm: bool = False):
-    # initial constants
-    guild = interaction.guild
+    # initial constnats
     spamchannel = interaction.guild.get_channel(channel_botspam())
     evidence_channel = interaction.guild.get_channel(channel_evidence())
 
     # find and count previous infractions
     infractions = await find_infraction(warned_user.id, 'warned_user')
     current_infraction_number = len(infractions) + 1
-    is_dyno_infraction = "**From Dyno**" in warning_reason
-    current_dyno_number = len(
-        [infraction for infraction in infractions if "**From Dyno**" in infraction.warning_reason])
-    if is_dyno_infraction:
-        current_dyno_number += 1
 
-    # infraction number ordinals
-    if current_dyno_number > 0:
-        dyno_ordinal = p.ordinal(current_dyno_number)
+    # handle thread (find if exists, create if not)
+    try:
+        thread = await find_thread(interaction=interaction, member=warned_user, guild=interaction.guild)
+        # print(thread)
 
-    infraction_ordinal = p.ordinal(current_infraction_number)
+        if not thread:
+            await create_thread(member=warned_user, guild=interaction.guild)
+            thread = await find_thread(interaction, warned_user, guild=interaction.guild)
+            ping_message = await thread.send('Ghost pinging...')
+            await ping_message.edit(content=f'{interaction.guild.get_role(constants.role_mod()).mention}')
+            print(f"Created thread with id {thread.id}")
 
-    # Combine warning reason and message
+    except Exception as e:
+        try:
+            raise CustomError(f"Error in thread handling: {e}")
+        except Exception as e:
+            return await on_generic_error(interaction=interaction, error=e)
     if warning_message:
         warning_reason = f'{warning_reason}\n{warning_message}'
-
-    # check if thread exits
-    thread = await find_thread(warned_user.id, guild)
-    if thread:
-        thread_id = thread.id
-    else:
-        thread_id = None
 
     # Insert infraction into database
     try:
@@ -238,7 +243,7 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
             warning_moderator=warning_moderator.id,
             rule_broken=rule_number,
             warning_reason=warning_reason,
-            thread_id=thread_id
+            thread_id=thread.id
         )
     except Exception as e:
         try:
@@ -246,6 +251,37 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
         except Exception as e:
             return await on_generic_error(interaction, e)
     color = warning_color(current_infraction_number)
+
+    # post infraction to thread
+    embed = discord.Embed(
+        title=f"Infraction #{current_infraction_number}",
+        description="Warning Reason: " + warning_reason,
+        timestamp=datetime.fromtimestamp(warning_time),
+        color=color
+    )
+    embed.add_field(
+        name="User",
+        value=f"<@{warned_user.id}>",
+        inline=True
+    )
+    embed.add_field(
+        name="Moderator",
+        value=f"<@{warning_moderator.id}>",
+        inline=True
+    )
+    embed.add_field(
+        name='Rule Broken',
+        value=rule_number,
+        inline=True
+    )
+
+    embed.add_field(
+        name='Database Entry',
+        value=infraction,
+        inline=True
+    )
+    embed.set_image(url=image)
+    await thread.send(embed=embed)
 
     # DM user
     if send_dm:
@@ -270,38 +306,15 @@ async def warn_user(warned_user: discord.Member, interaction: discord.Interactio
 
         except Exception as e:
             await interaction.followup.send(content="Could not DM user", ephemeral=True)
-
     # Success Message
     embed = discord.Embed(
         description="✅ **Successfully issued and logged infraction.**",
         color=constants.EMBED_COLOUR_OK
     )
 
-    # Build announcement description
-    description = (f'ℹ️ **A new infraction was created for <@{warned_user.id}> by <@{warning_moderator.id}>.**\n'
-                   f'This is their {infraction_ordinal} infraction')
-
-    if is_dyno_infraction:
-        description += f' ({dyno_ordinal} dyno infraction)'
-    elif current_dyno_number > 0:
-        description += f' ({current_dyno_number} dyno infraction(s)'
-    description += '.'
-
-    # Sync infractions
-    await sync_infractions(warned_user.id, guild)
-    thread = await find_thread(warned_user.id, guild)
-    if thread:
-        description += f'\nThread link: {thread.jump_url}'
-
-    # Create thread if thread doesn't exist and if this is the member's 3rd dyno infraction or a non-dyno infraction
-    if not thread and (not is_dyno_infraction or current_dyno_number >= 3):
-        await create_thread(warned_user.id, guild)
-        thread = await find_thread(warned_user.id, guild)
-        await sync_infractions(warned_user.id, guild)
-        description += f'Thread link: \n{thread.jump_url}'
-
     announcement_embed = discord.Embed(
-        description=description,
+        description=f'ℹ️ **A new infraction was created for <@{warned_user.id}> by <@{warning_moderator.id}>.**\n'
+                    f'View in <#{thread.id}>',
         color=constants.EMBED_COLOUR_QU
     )
     if warning_message:
@@ -366,7 +379,6 @@ def check_roles(permitted_role_ids):
     """
     Returns bool based off of if user has given roles
     """
-
     async def checkroles(interaction: discord.Interaction):
         permission, permitted_roles = await checkroles_actual(interaction, permitted_role_ids)
         print("Inherited permission from checkroles")
@@ -565,147 +577,3 @@ def member_or_member_id(input: str):
 
     else:
         return None
-
-
-async def sync_infractions(user_id, guild):
-    # get user infractions
-    infractions = await find_infraction(user_id, 'warned_user')
-    current_dyno_number = len(
-        [infraction for infraction in infractions if "**From Dyno**" in infraction.warning_reason])
-
-    # only open the thread if we need to (i.e. dyno infractions are less than 3 and there are no manual infractions)
-    open_thread = ((len(infractions) - current_dyno_number) > 0) or current_dyno_number >= 3
-
-    # get thread if exists
-    thread = await find_thread(user_id, guild)
-
-    # exit early if neither exist
-    if not thread and not infractions:
-        print('Syncing not needed - No infractions, no threads')
-        return True
-
-    # Check if there are infractions in discord but not in the database
-    if not infractions and thread:
-        non_bot_messages = [message async for message in thread.history() if not message.author.bot]
-
-        # delete all infractions, but not user messages nor the thread
-        if non_bot_messages:
-            async for message in thread.history():
-                if message.author == bot.user:
-                    await message.delete()
-                    print('Synced thread - No infractions, non-bot messages present')
-            return True
-
-        # delete thread if no user messages
-        await thread.delete()
-        print('Synced thread - No infractions, thread deleted')
-
-    # Delete/do not open thread if it is not necessary
-    if not open_thread:
-        if thread:
-            await thread.delete()
-            print('Synced thread - Thread threshold not met, thread deleted')
-        return True
-
-    else:
-        await create_thread(user_id, guild)
-        thread = await find_thread(user_id, guild)
-
-    # info extraction from existing embeds
-    def extract_id(value: str) -> int:
-        match = re.search(r'(\d+)', value)
-        if match:
-            return int(match.group(1))
-        return 0  # return a default value if no match
-
-    def extract_infraction_from_embed(embed: discord.Embed) -> dict:
-        return {
-            'warned_user': extract_id(embed.fields[0].value),
-            'warning_moderator': extract_id(embed.fields[1].value),
-            'warning_time': embed.timestamp.timestamp(),
-            'warning_reason': embed.description,
-            'rule_broken': embed.fields[2].value,
-            'entry_id': embed.fields[3].value,
-            'thread_id': thread.id
-        }
-
-    thread_infractions = []
-    async for message in thread.history():
-        for embed in message.embeds:
-            infraction = extract_infraction_from_embed(embed)
-            thread_infractions.append(infraction)
-
-    # get missing infractions from thread
-    db_infractions = [infraction.to_dictionary() for infraction in infractions]
-    db_ids = {infraction['entry_id'] for infraction in db_infractions}
-    print(db_ids)
-    thread_ids = {int(infraction['entry_id']) for infraction in thread_infractions}
-    missing_in_thread = db_ids - thread_ids
-
-    for itx, infraction in enumerate(infractions, start=1):
-        infraction_ordinal = p.ordinal(itx)
-        color = warning_color(itx)
-        if infraction.entry_id not in missing_in_thread:
-            continue
-
-        embed = discord.Embed(
-            title=f"{infraction_ordinal} Infraction",
-            description="Warning Reason: " + infraction.warning_reason,
-            timestamp=datetime.fromtimestamp(infraction.warning_time),
-            color=color
-        )
-        embed.add_field(
-            name="User",
-            value=f"<@{infraction.warned_user}>",
-            inline=True
-        )
-        embed.add_field(
-            name="Moderator",
-            value=f"<@{infraction.warning_moderator}>",
-            inline=True
-        )
-        embed.add_field(
-            name='Rule Broken',
-            value=infraction.rule_broken,
-            inline=True
-        )
-
-        embed.add_field(
-            name='Database Entry',
-            value=infraction.entry_id,
-            inline=True
-        )
-
-        await thread.send(embed=embed)
-
-    # Infractions present in thread but not in database
-    extra_in_thread = thread_ids - db_ids
-    # print(extra_in_thread)
-    if extra_in_thread:
-        messages_to_delete = []
-        async for message in thread.history():
-            for embed in message.embeds:
-                if int(embed.fields[4].value) in extra_in_thread:
-                    messages_to_delete.append(message)
-        for msg in messages_to_delete:
-            await msg.delete()
-
-    messages = [message async for message in thread.history(limit=100)]
-    messages = [message for message in messages if message.embeds]
-    messages.reverse()
-    # Update infraction numbers
-    for itx, message in enumerate(messages, start=1):
-        if message.embeds:
-            embed = message.embeds[0]
-            title = embed.title
-            if 'Infraction' in title:
-                current_number = int(title[0])
-                if current_number != itx:
-                    new_title = f"{p.ordinal(itx)} Infraction"
-                    new_embed = embed.to_dict()
-                    new_embed['title'] = new_title
-                    new_embed['color'] = warning_color(itx)
-                    await message.edit(embed=discord.Embed.from_dict(new_embed))
-                    print('Updated message')
-    print('Synced thread - Fully Synced')
-    return True

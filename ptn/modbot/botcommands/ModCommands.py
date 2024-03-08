@@ -1,5 +1,4 @@
 # discord.py
-import asyncio
 import re
 import time
 from datetime import datetime, timedelta
@@ -28,11 +27,8 @@ from ptn.modbot.database.database import find_infraction, delete_single_warning,
 from ptn.modbot.modules.ErrorHandler import on_app_command_error, on_generic_error, CustomError
 from ptn.modbot.modules.Helpers import (find_thread, display_infractions, get_rule, create_thread, warn_user,
                                         check_roles, rule_check, delete_thread_if_only_bot_message, can_see_channel, \
-                                        warning_color, is_in_channel, edit_warning_reason, member_or_member_id,
-                                        sync_infractions)
+    warning_color, is_in_channel, edit_warning_reason, member_or_member_id)
 
-import inflect
-p = inflect.engine()
 '''
 MODALS FOR WARNS
 '''
@@ -100,11 +96,9 @@ class DeletionConfirmation(discord.ui.View):
     @discord.ui.button(label='Delete', style=discord.ButtonStyle.green, emoji='⚠️', custom_id='delete', row=0)
     async def delete_infraction_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         botspam = interaction.guild.get_channel(channel_botspam())
-        guild = interaction.guild
-        # Get user id
-        infraction_user = int(re.sub(r'[^a-zA-Z0-9 ]', '', self.message.embeds[0].fields[0].value))
 
-
+        # Get the infraction number
+        infraction_number = int(self.message.embeds[0].title.split('#')[1])
         # Delete infraction in thread
         await self.message.delete()
 
@@ -119,8 +113,10 @@ class DeletionConfirmation(discord.ui.View):
         )
         await botspam.send(embed=spam_embed)
 
-        # Sync infractions
-        await sync_infractions(infraction_user, guild)
+        # Call our helper function to check and delete the thread if necessary
+        user_messages = [message async for message in interaction.channel.history() if not message.author.bot]
+        if not user_messages:
+            await delete_thread_if_only_bot_message(self.message)
 
         embed_confirmation = discord.Embed(
             description='✅ Infraction Deleted',
@@ -131,6 +127,21 @@ class DeletionConfirmation(discord.ui.View):
 
         print('Infraction Removal Successful')
 
+        messages = [message async for message in interaction.channel.history(limit=100)]
+        # Update infraction numbers
+        for message in messages:
+            if message.embeds:
+                embed = message.embeds[0]
+                title = embed.title
+                if title.startswith("Infraction #"):
+                    current_number = int(title.split('#')[1])
+                    if current_number >= infraction_number:
+                        new_title = f"Infraction #{current_number - 1}"
+                        new_embed = embed.to_dict()
+                        new_embed['title'] = new_title
+                        new_embed['color'] = warning_color(current_number - 1)
+                        await message.edit(embed=discord.Embed.from_dict(new_embed))
+                        print('Updated message')
 
     @discord.ui.button(label='Cancel', style=discord.ButtonStyle.red, emoji='✖️', custom_id='cancel', row=0)
     async def cancel_deletion(self, interaction: discord.Interaction, button: discord.Button):
@@ -403,13 +414,118 @@ class ModCommands(commands.Cog):
     @check_roles(constants.any_elevated_role)
     async def sync_infractions(self, interaction: discord.Interaction, member: discord.Member):
         print(f'{interaction.user.display_name} called sync_infractions')
-        await interaction.response.defer(thinking=True, ephemeral=True)
-        synced = await sync_infractions(member.id, guild=interaction.guild)
+        guild = interaction.guild
+        botspam = guild.get_channel(channel_botspam())
 
-        success_embed = discord.Embed(description='### Successfully synced infractions', colour=constants.EMBED_COLOUR_OK)
+        db_infractions = await find_infraction(member.id, 'warned_user')
+        # print(db_infractions)
+        await find_thread(interaction, member, guild)
+        thread = await find_thread(interaction, member, guild)
 
-        if synced:
-            await interaction.followup.send(embed=success_embed, ephemeral=True)
+        # If there are no infractions in the database and a thread exists, delete the thread and inform the user.
+        if not db_infractions and thread:
+            non_bot_messages = [message async for message in thread.history() if not message.author.bot]
+            if non_bot_messages:
+                async for message in thread.history():
+                    if message.author == bot.user:
+                        await message.delete()
+
+                response_embed = discord.Embed(
+                    description=f'Cleaned thread for <@{member.id}>, did not delete due to user messages in channel.',
+                    color=constants.EMBED_COLOUR_OK)
+
+                await interaction.response.send_message(embed=response_embed, ephemeral=True)
+                return
+
+            await thread.delete()
+            response_embed = discord.Embed(
+                description=f'Thread for <@{member.id}> deleted as no infractions were found in the database.',
+                color=constants.EMBED_COLOUR_OK)
+
+            spam_embed = discord.Embed(
+                description=f'Thread for <@{member.id}> deleted in sync action from <@{interaction.user.id}>.',
+                color=constants.EMBED_COLOUR_QU
+            )
+            await interaction.response.send_message(embed=response_embed, ephemeral=True)
+            await botspam.send(embed=spam_embed)
+            return
+
+        # If no infractions exist in the database for the member and no thread exists, exit early.
+        if not db_infractions:
+            response_embed = discord.Embed(description=f'No infractions found for <@{member.id}> in the database.',
+                                           color=constants.EMBED_COLOUR_OK)
+            await interaction.response.send_message(embed=response_embed, ephemeral=True)
+            return
+
+        if not thread:
+            thread = await create_thread(member, guild)
+
+        response_embed = discord.Embed(description=f'Syncing Infractions for <@{member.id}>...')
+        await interaction.response.send_message(embed=response_embed, ephemeral=True)
+
+        def extract_id(value: str) -> int:
+            match = re.search(r'(\d+)', value)
+            if match:
+                return int(match.group(1))
+            return 0  # return a default value if no match
+
+        def extract_infraction_from_embed(embed: discord.Embed) -> dict:
+            return {
+                'warned_user': extract_id(embed.fields[0].value),
+                'warning_moderator': extract_id(embed.fields[1].value),
+                'warning_time': embed.timestamp.timestamp(),
+                'warning_reason': embed.fields[2].value,
+                'rule_broken': embed.fields[3].value,
+                'entry_id': embed.fields[4].value,
+                'thread_id': thread.id
+            }
+
+        thread_infractions = []
+        async for message in thread.history():
+            for embed in message.embeds:
+                infraction = extract_infraction_from_embed(embed)
+                thread_infractions.append(infraction)
+
+        db_infractions_raw = await find_infraction(member.id, 'warned_user')
+        db_infractions = [infraction.to_dictionary() for infraction in db_infractions_raw]
+        db_ids = {infraction['entry_id'] for infraction in db_infractions}
+        # print(db_ids)
+        thread_ids = {int(infraction['entry_id']) for infraction in thread_infractions}
+        # print(thread_ids)
+
+        # Infractions missing in the thread
+        missing_in_thread = db_ids - thread_ids
+        # print(missing_in_thread)
+        for itx, infraction in enumerate(db_infractions):
+            if infraction['entry_id'] in missing_in_thread:
+                print('MISSING IN THREAD, SENDING...')
+                embed = discord.Embed(
+                    title=f"Infraction #{itx + 1}",
+                    timestamp=datetime.fromtimestamp(infraction['warning_time'])
+                )
+                embed.add_field(name="User", value=f"<@{infraction['warned_user']}>", inline=True)
+                embed.add_field(name="Moderator", value=f"<@{infraction['warning_moderator']}>", inline=True)
+                embed.add_field(name="Reason", value=infraction['warning_reason'], inline=True)
+                embed.add_field(name='Rule Broken', value=infraction['rule_broken'], inline=True)
+                embed.add_field(name='Database Entry', value=infraction['entry_id'], inline=True)
+                embed.set_footer(text='Synced from database')
+                await thread.send(embed=embed)
+
+        # Infractions present in thread but not in database
+        extra_in_thread = thread_ids - db_ids
+        # print(extra_in_thread)
+        if extra_in_thread:
+            messages_to_delete = []
+            async for message in thread.history():
+                for embed in message.embeds:
+                    if int(embed.fields[4].value) in extra_in_thread:
+                        messages_to_delete.append(message)
+            for msg in messages_to_delete:
+                await msg.delete()
+
+        await interaction.delete_original_response()
+        await interaction.followup.send(embed=discord.Embed(description=f'✅ Infractions Synced',
+                                                            color=constants.EMBED_COLOUR_OK), ephemeral=True)
 
     @app_commands.command(name='summon_mod', description='Summons a mod for help in a channel')
     @can_see_channel(atlas_channel())
@@ -684,7 +800,7 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
         if interaction.channel.parent_id == forum_channel() and isinstance(channel, discord.Thread):
             infraction_embed = message.embeds[0]
             infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
-            infraction_entry = int(infraction_embed.fields[3].value)
+            infraction_entry = int(infraction_embed.fields[4].value)
             # await interaction.response.send_message(f'TEST:\nREASON: {infraction_reason}\nUSER: {infraction_user}')
 
             embed = discord.Embed(
