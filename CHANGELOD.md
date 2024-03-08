@@ -1,4 +1,8 @@
 # Changelog
+## 1.3.12
+- Fixed index error in Remove Infraction
+## 1.3.11
+- Removed deletion of Dyno bonks
 ## 1.3.10
 - Fixed formatting for report to moderation
 ## 1.3.9
