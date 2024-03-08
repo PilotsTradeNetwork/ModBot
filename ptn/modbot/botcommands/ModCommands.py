@@ -748,7 +748,7 @@ async def report_to_moderation(interaction: discord.Interaction, message: discor
 
     reported_user = message.author
     report_time = datetime.now()
-    report_title = f'## Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
+    report_title = f'### Report from <@{interaction.user.id}> on a message from <@{reported_user.id}> in ' \
                    f'<#{interaction.channel.id}>.\n'
 
     report_message = '\n'
@@ -971,8 +971,6 @@ async def report_to_warn(interaction: discord.Interaction, message: discord.Mess
                 await interaction.response.send_message(view=WarningAndDMConfirmation(warning_data=warning_data),
 
                                                         ephemeral=True, embed=embed)
-                if not dyno:
-                    await message.delete()
             except Exception as e:
                 try:
                     raise CustomError(f'Could not warn from report! `{e}`')
