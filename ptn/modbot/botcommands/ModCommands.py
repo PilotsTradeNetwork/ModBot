@@ -592,7 +592,7 @@ class ModCommands(commands.Cog):
                     title='🛡️ A mod is answering the summons',
                     description=f"{summon_info['summon_time']} {user.mention} is answering the mod summon in "
                                 f"{summon_info['channel_mention']}."
-                                f"\n\n**Last message before summon:** [Jump to message]({summon_info['last_message_link']})",
+                                f"\n\n**Last message before summon:** {summon_info['last_message_link']}",
                     color=constants.EMBED_COLOUR_OK
                 )
                 self.summon_message_ids.pop(reaction.message.id, None)
@@ -800,7 +800,7 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
         if interaction.channel.parent_id == forum_channel() and isinstance(channel, discord.Thread):
             infraction_embed = message.embeds[0]
             infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
-            infraction_entry = int(infraction_embed.fields[4].value)
+            infraction_entry = int(infraction_embed.fields[3].value)
             # await interaction.response.send_message(f'TEST:\nREASON: {infraction_reason}\nUSER: {infraction_user}')
 
             embed = discord.Embed(
