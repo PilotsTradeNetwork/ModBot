@@ -800,7 +800,7 @@ async def remove_infraction(interaction: discord.Interaction, message: discord.M
         if interaction.channel.parent_id == forum_channel() and isinstance(channel, discord.Thread):
             infraction_embed = message.embeds[0]
             infraction_user = re.sub(r'[^a-zA-Z0-9 ]', '', infraction_embed.fields[0].value)
-            infraction_entry = int(infraction_embed.fields[4].value)
+            infraction_entry = int(infraction_embed.fields[3].value)
             # await interaction.response.send_message(f'TEST:\nREASON: {infraction_reason}\nUSER: {infraction_user}')
 
             embed = discord.Embed(
